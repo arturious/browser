@@ -193,14 +193,8 @@ struct ContentView: View {
 
                 Spacer(minLength: 20)
 
-                HStack(spacing: 2) {
-                    if let tab = viewModel.activeTab {
-                        PiPToggleButton(tab: tab)
-                    }
-
-                    DownloadsButton(isShowingList: $isDownloadsListShowing)
-                }
-                .padding(.trailing, 12)
+                DownloadsButton(isShowingList: $isDownloadsListShowing)
+                    .padding(.trailing, 12)
             }
 
             if let tab = viewModel.activeTab {
@@ -221,6 +215,8 @@ struct ContentView: View {
                         },
                         isEditing: $isEditingAddress
                     )
+                    PiPToggleButton(tab: tab)
+                        .padding(.leading, 6)
                 }
                 .onChange(of: tab.url) { _, newURL in
                     if !isEditingAddress && !viewModel.isCreatingNewTab {
@@ -486,14 +482,29 @@ private struct DownloadProgressPie: Shape {
 
 private struct PiPToggleButton: View {
     @ObservedObject var tab: BrowserTab
+    @State private var isHovering = false
 
     var body: some View {
-        if tab.hasPlayingVideo {
-            ToolbarIconButton(systemName: "pip") {
+        // Always reserves its 24x24 slot (rather than being removed from the
+        // hierarchy) so the address bar it sits next to doesn't shift left
+        // and right as videos start/stop — only its visibility toggles.
+        Image(systemName: "pip")
+            .font(.system(size: 12, weight: .bold))
+            .foregroundColor(Color(red: 0xB2 / 255, green: 0xB2 / 255, blue: 0xB2 / 255))
+            .frame(width: 24, height: 24)
+            .background(
+                RoundedRectangle(cornerRadius: 6)
+                    .fill(Color.white.opacity(isHovering ? 0.12 : 0))
+            )
+            .contentShape(Rectangle())
+            .onTapGesture {
                 PiPManager.shared.togglePiP(for: tab)
             }
-            .font(.system(size: 14, weight: .bold))
-        }
+            .onHover { hovering in
+                isHovering = hovering
+            }
+            .opacity(tab.hasPlayingVideo ? 1 : 0)
+            .allowsHitTesting(tab.hasPlayingVideo)
     }
 }
 
@@ -527,7 +538,7 @@ private struct DownloadsButton: View {
                     DownloadProgressPie(progress: aggregateProgress)
                         .fill(Color(red: 0xAC / 255, green: 0xAC / 255, blue: 0xAC / 255))
                 }
-                .frame(width: 13, height: 13)
+                .frame(width: 16, height: 16)
                 .animation(.easeInOut(duration: 0.2), value: aggregateProgress)
                 .opacity(isActive ? 1 : 0)
                 .scaleEffect(isActive ? 1 : 0.4)

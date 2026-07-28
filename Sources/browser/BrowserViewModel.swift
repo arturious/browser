@@ -22,6 +22,7 @@ final class BrowserViewModel: ObservableObject {
             let tab = BrowserTab(url: url)
             wireUpPopupHandling(for: tab)
             wireUpPiPHandling(for: tab)
+            wireUpNewTabHandling(for: tab)
             tabs.append(tab)
         }
         let activeIndex = session.activeIndex.flatMap { tabs.indices.contains($0) ? $0 : nil } ?? 0
@@ -41,9 +42,18 @@ final class BrowserViewModel: ObservableObject {
         let tab = BrowserTab(url: url)
         wireUpPopupHandling(for: tab)
         wireUpPiPHandling(for: tab)
+        wireUpNewTabHandling(for: tab)
         tabs.insert(tab, at: 0)
         selectTab(tab)
         persistSession()
+    }
+
+    /// Wires Cmd+click on a link (the standard "open in a new tab" gesture)
+    /// to actually open a new tab — WKWebView doesn't handle this itself.
+    private func wireUpNewTabHandling(for tab: BrowserTab) {
+        tab.onOpenInNewTab = { [weak self] url in
+            self?.addNewTab(url: url)
+        }
     }
 
     /// Wires `target="_blank"`/`window.open()` handling: without this,
@@ -56,6 +66,7 @@ final class BrowserViewModel: ObservableObject {
             let popupTab = BrowserTab(popupConfiguration: configuration)
             self.wireUpPopupHandling(for: popupTab)
             self.wireUpPiPHandling(for: popupTab)
+            self.wireUpNewTabHandling(for: popupTab)
             let insertIndex = tab.flatMap { openerTab in self.tabs.firstIndex(where: { $0 === openerTab }) } ?? 0
             self.tabs.insert(popupTab, at: insertIndex)
             self.selectTab(popupTab)

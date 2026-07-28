@@ -40,6 +40,10 @@ final class BrowserTab: Identifiable, ObservableObject {
     /// nil to refuse the popup.
     var onCreatePopup: ((WKWebViewConfiguration, WKNavigationAction) -> WKWebView?)?
 
+    /// Fired when the user Cmd+clicks a link — the standard "open in a new
+    /// tab" gesture, which WKWebView doesn't handle on its own.
+    var onOpenInNewTab: ((URL) -> Void)?
+
     convenience init(url: URL) {
         let config = WKWebViewConfiguration()
         // Public API for this (WKWebViewConfiguration.allowsPictureInPictureMediaPlayback)
@@ -371,9 +375,19 @@ final class WebViewCoordinator: NSObject, WKNavigationDelegate {
         if navigationAction.shouldPerformDownload {
             isDownloadNavigation = true
             return (.download, preferences)
-        } else {
-            return (.allow, preferences)
         }
+
+        // Cmd+clicking a link is the standard "open in new tab" gesture —
+        // WKWebView doesn't handle this itself, so intercept it here rather
+        // than letting it navigate the current tab.
+        if navigationAction.navigationType == .linkActivated,
+           navigationAction.modifierFlags.contains(.command),
+           let url = navigationAction.request.url {
+            tab?.onOpenInNewTab?(url)
+            return (.cancel, preferences)
+        }
+
+        return (.allow, preferences)
     }
 
     func webView(
