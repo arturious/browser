@@ -55,6 +55,31 @@ final class BrowserTab: Identifiable, ObservableObject {
             forMainFrameOnly: false
         )
         config.userContentController.addUserScript(script)
+
+        // WKWebView can't complete a WebAuthn/passkey ceremony for a domain
+        // this app has no Associated Domains entitlement for (i.e. any
+        // third-party site) — the request just hangs on "Use your passkey to
+        // confirm it's really you" forever. Disabling the WebAuthn API on
+        // known federated sign-in domains makes them detect no passkey
+        // support and fall back to their normal password/code flow instead.
+        let disableWebAuthnScript = WKUserScript(
+            source: """
+            (() => {
+                const blockedHosts = ['accounts.google.com'];
+                if (blockedHosts.includes(location.hostname)) {
+                    Object.defineProperty(window, 'PublicKeyCredential', { value: undefined, configurable: true });
+                    if (window.navigator.credentials) {
+                        navigator.credentials.get = () => Promise.reject(new Error('WebAuthn disabled'));
+                        navigator.credentials.create = () => Promise.reject(new Error('WebAuthn disabled'));
+                    }
+                }
+            })();
+            """,
+            injectionTime: .atDocumentStart,
+            forMainFrameOnly: false
+        )
+        config.userContentController.addUserScript(disableWebAuthnScript)
+
         AdBlockManager.shared.register(config.userContentController)
 
         self.init(url: url, configuration: config, pipHandler: handler)
