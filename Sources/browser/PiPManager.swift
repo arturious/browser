@@ -52,4 +52,13 @@ final class PiPManager {
         )
         pipTabId = nil
     }
+
+    /// Marks PiP as no longer showing for this tab without touching the
+    /// page — used when the page itself already told us PiP ended (the
+    /// system window's own close/return controls), so there's nothing left
+    /// to tear down beyond our own bookkeeping.
+    func clearPiPState(for tabId: UUID) {
+        guard pipTabId == tabId else { return }
+        pipTabId = nil
+    }
 }

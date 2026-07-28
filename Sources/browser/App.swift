@@ -26,6 +26,12 @@ struct BrowserApp: App {
 }
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
+    /// Tags the main browser window so it can be reliably found later (e.g.
+    /// to bring back to the front when returning from PiP) even after the
+    /// Settings window has been opened at least once and started showing up
+    /// in `NSApp.windows` too.
+    static let mainWindowIdentifier = NSUserInterfaceItemIdentifier("main-browser-window")
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.regular)
         NSApp.activate(ignoringOtherApps: true)
@@ -33,6 +39,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         UpdateChecker.shared.checkForUpdates(userInitiated: false)
         NSWindow.allowsAutomaticWindowTabbing = false
         for window in NSApp.windows {
+            window.identifier = Self.mainWindowIdentifier
             window.titlebarAppearsTransparent = true
             window.titleVisibility = .hidden
             window.styleMask.insert(.fullSizeContentView)

@@ -91,7 +91,7 @@ final class BrowserViewModel: ObservableObject {
                 currentTab.onPiPExited = { [weak self, weak currentTab] in
                     guard let self, let currentTab else { return }
                     NSApp.activate(ignoringOtherApps: true)
-                    NSApp.windows.first?.makeKeyAndOrderFront(nil)
+                    NSApp.windows.first { $0.identifier == AppDelegate.mainWindowIdentifier }?.makeKeyAndOrderFront(nil)
                     self.selectTab(currentTab)
                 }
                 PiPManager.shared.enterPiP(for: currentTab) {

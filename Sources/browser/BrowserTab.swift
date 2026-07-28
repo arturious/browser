@@ -16,6 +16,7 @@ final class BrowserTab: Identifiable, ObservableObject {
     let webView: WKWebView
     private var coordinator: WebViewCoordinator?
     private var faviconHost: String?
+    private var zoomHost: String?
     private var urlObservation: NSKeyValueObservation?
     private var titleObservation: NSKeyValueObservation?
     private var pipMessageHandler: PiPExitMessageHandler?
@@ -23,7 +24,9 @@ final class BrowserTab: Identifiable, ObservableObject {
     /// Fired when the page's video leaves Picture-in-Picture for any reason
     /// (including the system PiP window's "return to tab" button), so the
     /// app can bring this tab back to the front — the system doesn't do that
-    /// for us since we're not Safari.
+    /// for us since we're not Safari. WKWebView gives no way to tell "return"
+    /// apart from the PiP window's "X" (close) button, so this also fires
+    /// (harmlessly, if a bit unexpectedly) when the user just closes PiP.
     var onPiPExited: (() -> Void)?
 
     /// Fired when a page tries to open a new window/tab (`target="_blank"`,
@@ -47,9 +50,33 @@ final class BrowserTab: Identifiable, ObservableObject {
         config.userContentController.add(handler, name: "pipExited")
         let script = WKUserScript(
             source: """
-            document.addEventListener('leavepictureinpicture', () => {
-                window.webkit.messageHandlers.pipExited.postMessage(true);
-            }, true);
+            (() => {
+                // The system PiP window's close (X) button pauses the video
+                // as part of WebKit's own native teardown; its "return to
+                // tab" arrow doesn't touch playback at all. Either way,
+                // closing PiP shouldn't leave a video that was actually
+                // playing stuck paused — but a video the user had already
+                // paused themselves should stay paused. Track "was it
+                // playing" independently of this event's own timing (that
+                // pause can land before or after 'leavepictureinpicture'
+                // fires) so the check isn't a race.
+                let wasPlayingRecently = false;
+                setInterval(() => {
+                    const v = document.querySelector('video');
+                    if (v) wasPlayingRecently = !v.paused;
+                }, 200);
+
+                document.addEventListener('leavepictureinpicture', (event) => {
+                    const video = event.target;
+                    const wasPlaying = wasPlayingRecently;
+                    setTimeout(() => {
+                        if (wasPlaying && video.paused) {
+                            video.play().catch(() => {});
+                        }
+                        window.webkit.messageHandlers.pipExited.postMessage(true);
+                    }, 200);
+                }, true);
+            })();
             """,
             injectionTime: .atDocumentStart,
             forMainFrameOnly: false
@@ -167,16 +194,35 @@ final class BrowserTab: Identifiable, ObservableObject {
     func zoomIn() {
         zoomLevel = min(zoomLevel + 0.05, 3.0)
         webView.pageZoom = zoomLevel
+        persistZoom()
     }
 
     func zoomOut() {
         zoomLevel = max(zoomLevel - 0.05, 0.25)
         webView.pageZoom = zoomLevel
+        persistZoom()
     }
 
     func resetZoom() {
         zoomLevel = 1.0
         webView.pageZoom = zoomLevel
+        persistZoom()
+    }
+
+    private func persistZoom() {
+        guard let host = url.host else { return }
+        ZoomStore.setZoom(zoomLevel, for: host)
+    }
+
+    /// Applies whatever zoom level was last saved for this host (or the
+    /// default if none), called whenever a navigation lands on a new host —
+    /// so a site you've zoomed once stays zoomed on future visits.
+    fileprivate func applyStoredZoom(for host: String?) {
+        guard host != zoomHost else { return }
+        zoomHost = host
+        let stored = host.flatMap { ZoomStore.zoom(for: $0) } ?? 1.0
+        zoomLevel = stored
+        webView.pageZoom = stored
     }
 
     var faviconLetter: String {
@@ -191,11 +237,14 @@ final class BrowserTab: Identifiable, ObservableObject {
     }
 }
 
+@MainActor
 private final class PiPExitMessageHandler: NSObject, WKScriptMessageHandler {
     weak var tab: BrowserTab?
 
     func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
-        tab?.onPiPExited?()
+        guard let tab else { return }
+        PiPManager.shared.clearPiPState(for: tab.id)
+        tab.onPiPExited?()
     }
 }
 
@@ -223,6 +272,7 @@ final class WebViewCoordinator: NSObject, WKNavigationDelegate {
         }
         tab?.canGoBack = webView.canGoBack
         tab?.canGoForward = webView.canGoForward
+        tab?.applyStoredZoom(for: webView.url?.host)
     }
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
