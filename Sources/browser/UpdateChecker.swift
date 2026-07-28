@@ -10,7 +10,7 @@ import AppKit
 final class UpdateChecker {
     static let shared = UpdateChecker()
 
-    static let currentVersion = "1.0.3"
+    static let currentVersion = "1.0.4"
     private static let repo = "arturious/browser"
 
     private init() {}
@@ -129,8 +129,14 @@ final class UpdateChecker {
     private func relaunch(at appURL: URL) {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/open")
-        process.arguments = [appURL.path]
+        process.arguments = ["-n", appURL.path]
         try? process.run()
+        // `open` hands off to Launch Services and returns almost
+        // immediately, before the new process is actually up — waiting for
+        // it to exit (rather than terminating self right away) avoids a
+        // race where our own process disappears before the relaunch request
+        // is fully handed off.
+        process.waitUntilExit()
         NSApp.terminate(nil)
     }
 
