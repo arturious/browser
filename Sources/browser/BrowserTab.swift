@@ -12,6 +12,7 @@ final class BrowserTab: Identifiable, ObservableObject {
     @Published var canGoForward: Bool = false
     @Published var faviconImage: NSImage?
     @Published var zoomLevel: CGFloat = 1.0
+    @Published var hasPlayingVideo: Bool = false
 
     let webView: WKWebView
     private var coordinator: WebViewCoordinator?
@@ -20,6 +21,7 @@ final class BrowserTab: Identifiable, ObservableObject {
     private var urlObservation: NSKeyValueObservation?
     private var titleObservation: NSKeyValueObservation?
     private var pipMessageHandler: PiPExitMessageHandler?
+    private var videoPlaybackMessageHandler: VideoPlaybackMessageHandler?
 
     /// Fired when the page's video leaves Picture-in-Picture for any reason
     /// (including the system PiP window's "return to tab" button), so the
@@ -83,6 +85,33 @@ final class BrowserTab: Identifiable, ObservableObject {
         )
         config.userContentController.addUserScript(script)
 
+        let videoHandler = VideoPlaybackMessageHandler()
+        config.userContentController.add(videoHandler, name: "videoPlaybackState")
+        let videoPlaybackScript = WKUserScript(
+            source: """
+            (() => {
+                let lastState = false;
+                function isAnyVideoPlaying() {
+                    return Array.from(document.querySelectorAll('video')).some(v => !v.paused && !v.ended);
+                }
+                function report() {
+                    const state = isAnyVideoPlaying();
+                    if (state !== lastState) {
+                        lastState = state;
+                        window.webkit.messageHandlers.videoPlaybackState.postMessage(state);
+                    }
+                }
+                document.addEventListener('play', report, true);
+                document.addEventListener('pause', report, true);
+                document.addEventListener('ended', report, true);
+                setInterval(report, 1000);
+            })();
+            """,
+            injectionTime: .atDocumentStart,
+            forMainFrameOnly: false
+        )
+        config.userContentController.addUserScript(videoPlaybackScript)
+
         // WKWebView can't complete a WebAuthn/passkey ceremony for a domain
         // this app has no Associated Domains entitlement for (i.e. any
         // third-party site) — the request just hangs on "Use your passkey to
@@ -109,7 +138,7 @@ final class BrowserTab: Identifiable, ObservableObject {
 
         AdBlockManager.shared.register(config.userContentController)
 
-        self.init(url: url, configuration: config, pipHandler: handler)
+        self.init(url: url, configuration: config, pipHandler: handler, videoHandler: videoHandler)
         webView.load(URLRequest(url: url))
         loadFavicon()
     }
@@ -120,10 +149,15 @@ final class BrowserTab: Identifiable, ObservableObject {
     /// setup), and loads the popup's own navigation into the returned
     /// webView itself — so we must not call `load` again here.
     convenience init(popupConfiguration configuration: WKWebViewConfiguration) {
-        self.init(url: URL(string: "about:blank")!, configuration: configuration, pipHandler: nil)
+        self.init(url: URL(string: "about:blank")!, configuration: configuration, pipHandler: nil, videoHandler: nil)
     }
 
-    private init(url: URL, configuration: WKWebViewConfiguration, pipHandler: PiPExitMessageHandler?) {
+    private init(
+        url: URL,
+        configuration: WKWebViewConfiguration,
+        pipHandler: PiPExitMessageHandler?,
+        videoHandler: VideoPlaybackMessageHandler?
+    ) {
         self.url = url
         self.title = url.host ?? "New Tab"
 
@@ -138,6 +172,9 @@ final class BrowserTab: Identifiable, ObservableObject {
 
         pipHandler?.tab = self
         self.pipMessageHandler = pipHandler
+
+        videoHandler?.tab = self
+        self.videoPlaybackMessageHandler = videoHandler
 
         // Single-page apps (e.g. YouTube) change the page URL via the History
         // API (pushState) without a full navigation, so WKNavigationDelegate
@@ -245,6 +282,15 @@ private final class PiPExitMessageHandler: NSObject, WKScriptMessageHandler {
         guard let tab else { return }
         PiPManager.shared.clearPiPState(for: tab.id)
         tab.onPiPExited?()
+    }
+}
+
+@MainActor
+private final class VideoPlaybackMessageHandler: NSObject, WKScriptMessageHandler {
+    weak var tab: BrowserTab?
+
+    func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
+        tab?.hasPlayingVideo = (message.body as? Bool) ?? false
     }
 }
 

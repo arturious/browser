@@ -45,6 +45,14 @@ final class PiPManager {
         }
     }
 
+    func togglePiP(for tab: BrowserTab) {
+        if isPiP(tab.id) {
+            exitPiPIfShowing(tab.id, webView: tab.webView)
+        } else {
+            enterPiP(for: tab) {}
+        }
+    }
+
     func exitPiPIfShowing(_ tabId: UUID, webView: WKWebView) {
         guard pipTabId == tabId else { return }
         webView.evaluateJavaScript(

@@ -193,8 +193,14 @@ struct ContentView: View {
 
                 Spacer(minLength: 20)
 
-                DownloadsButton(isShowingList: $isDownloadsListShowing)
-                    .padding(.trailing, 12)
+                HStack(spacing: 2) {
+                    if let tab = viewModel.activeTab {
+                        PiPToggleButton(tab: tab)
+                    }
+
+                    DownloadsButton(isShowingList: $isDownloadsListShowing)
+                }
+                .padding(.trailing, 12)
             }
 
             if let tab = viewModel.activeTab {
@@ -475,6 +481,19 @@ private struct DownloadProgressPie: Shape {
         )
         path.closeSubpath()
         return path
+    }
+}
+
+private struct PiPToggleButton: View {
+    @ObservedObject var tab: BrowserTab
+
+    var body: some View {
+        if tab.hasPlayingVideo {
+            ToolbarIconButton(systemName: "pip") {
+                PiPManager.shared.togglePiP(for: tab)
+            }
+            .font(.system(size: 14, weight: .bold))
+        }
     }
 }
 

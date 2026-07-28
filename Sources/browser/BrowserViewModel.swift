@@ -21,6 +21,7 @@ final class BrowserViewModel: ObservableObject {
         for url in session.urls {
             let tab = BrowserTab(url: url)
             wireUpPopupHandling(for: tab)
+            wireUpPiPHandling(for: tab)
             tabs.append(tab)
         }
         let activeIndex = session.activeIndex.flatMap { tabs.indices.contains($0) ? $0 : nil } ?? 0
@@ -39,6 +40,7 @@ final class BrowserViewModel: ObservableObject {
     func addNewTab(url: URL = URL(string: "https://www.google.com")!) {
         let tab = BrowserTab(url: url)
         wireUpPopupHandling(for: tab)
+        wireUpPiPHandling(for: tab)
         tabs.insert(tab, at: 0)
         selectTab(tab)
         persistSession()
@@ -53,6 +55,7 @@ final class BrowserViewModel: ObservableObject {
             guard let self else { return nil }
             let popupTab = BrowserTab(popupConfiguration: configuration)
             self.wireUpPopupHandling(for: popupTab)
+            self.wireUpPiPHandling(for: popupTab)
             let insertIndex = tab.flatMap { openerTab in self.tabs.firstIndex(where: { $0 === openerTab }) } ?? 0
             self.tabs.insert(popupTab, at: insertIndex)
             self.selectTab(popupTab)
@@ -99,31 +102,19 @@ final class BrowserViewModel: ObservableObject {
     func selectTab(_ tab: BrowserTab) {
         if PiPManager.shared.isPiP(tab.id) {
             PiPManager.shared.exitPiPIfShowing(tab.id, webView: tab.webView)
-            activateTab(tab)
-            return
         }
-        guard let currentTab = activeTab, currentTab.id != tab.id else {
-            activateTab(tab)
-            return
-        }
-        // Must request PiP (if applicable) while `currentTab` is still the
-        // visible/foreground tab — requestPictureInPicture() fails once the
-        // tab has already been switched away from.
-        currentTab.checkIsVideoPlaying { [weak self] isPlaying in
-            guard let self else { return }
-            if isPlaying {
-                currentTab.onPiPExited = { [weak self, weak currentTab] in
-                    guard let self, let currentTab else { return }
-                    NSApp.activate(ignoringOtherApps: true)
-                    NSApp.windows.first { $0.identifier == AppDelegate.mainWindowIdentifier }?.makeKeyAndOrderFront(nil)
-                    self.selectTab(currentTab)
-                }
-                PiPManager.shared.enterPiP(for: currentTab) {
-                    self.activateTab(tab)
-                }
-            } else {
-                self.activateTab(tab)
-            }
+        activateTab(tab)
+    }
+
+    /// Wires up the return-to-tab behavior for whenever this tab's video
+    /// leaves Picture-in-Picture (however PiP was entered — switching tabs
+    /// no longer does this automatically, that's a manual action now).
+    private func wireUpPiPHandling(for tab: BrowserTab) {
+        tab.onPiPExited = { [weak self, weak tab] in
+            guard let self, let tab else { return }
+            NSApp.activate(ignoringOtherApps: true)
+            NSApp.windows.first { $0.identifier == AppDelegate.mainWindowIdentifier }?.makeKeyAndOrderFront(nil)
+            self.selectTab(tab)
         }
     }
 
