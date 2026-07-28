@@ -1,0 +1,142 @@
+import SwiftUI
+
+@MainActor
+final class BrowserViewModel: ObservableObject {
+    @Published var tabs: [BrowserTab] = []
+    @Published var activeTabId: UUID?
+    @Published var addressInput: String = ""
+    @Published var addressBarFocusTrigger: Bool = false
+    @Published var isCreatingNewTab: Bool = false
+
+    init() {}
+
+    var activeTab: BrowserTab? {
+        tabs.first { $0.id == activeTabId }
+    }
+
+    func addNewTab(url: URL = URL(string: "https://www.google.com")!) {
+        let tab = BrowserTab(url: url)
+        wireUpPopupHandling(for: tab)
+        tabs.insert(tab, at: 0)
+        selectTab(tab)
+    }
+
+    /// Wires `target="_blank"`/`window.open()` handling: without this,
+    /// WebKit silently drops those navigations (some "Download" buttons
+    /// route through a popup before the actual file response, so this was
+    /// why those downloads never even reached our navigation delegate).
+    private func wireUpPopupHandling(for tab: BrowserTab) {
+        tab.onCreatePopup = { [weak self, weak tab] configuration, _ in
+            guard let self else { return nil }
+            let popupTab = BrowserTab(popupConfiguration: configuration)
+            self.wireUpPopupHandling(for: popupTab)
+            let insertIndex = tab.flatMap { openerTab in self.tabs.firstIndex(where: { $0 === openerTab }) } ?? 0
+            self.tabs.insert(popupTab, at: insertIndex)
+            self.selectTab(popupTab)
+            return popupTab.webView
+        }
+    }
+
+    func startNewTab() {
+        addressInput = ""
+        isCreatingNewTab = true
+        addressBarFocusTrigger.toggle()
+    }
+
+    func cancelNewTab() {
+        guard isCreatingNewTab else { return }
+        isCreatingNewTab = false
+        addressInput = activeTab?.url.absoluteString ?? ""
+    }
+
+    func closeTab(_ tab: BrowserTab) {
+        guard let index = tabs.firstIndex(where: { $0.id == tab.id }) else { return }
+        PiPManager.shared.exitPiPIfShowing(tab.id, webView: tab.webView)
+        tab.webView.pauseAllMediaPlayback(completionHandler: nil)
+        tab.webView.stopLoading()
+        tab.webView.navigationDelegate = nil
+        tab.webView.removeFromSuperview()
+        tabs.remove(at: index)
+        if activeTabId == tab.id {
+            if tabs.isEmpty {
+                activeTabId = nil
+                addressInput = ""
+            } else {
+                selectTab(tabs[min(index, tabs.count - 1)])
+            }
+        }
+    }
+
+    func closeTab(id: UUID) {
+        guard let tab = tabs.first(where: { $0.id == id }) else { return }
+        closeTab(tab)
+    }
+
+    func selectTab(_ tab: BrowserTab) {
+        if PiPManager.shared.isPiP(tab.id) {
+            PiPManager.shared.exitPiPIfShowing(tab.id, webView: tab.webView)
+            activateTab(tab)
+            return
+        }
+        guard let currentTab = activeTab, currentTab.id != tab.id else {
+            activateTab(tab)
+            return
+        }
+        // Must request PiP (if applicable) while `currentTab` is still the
+        // visible/foreground tab — requestPictureInPicture() fails once the
+        // tab has already been switched away from.
+        currentTab.checkIsVideoPlaying { [weak self] isPlaying in
+            guard let self else { return }
+            if isPlaying {
+                currentTab.onPiPExited = { [weak self, weak currentTab] in
+                    guard let self, let currentTab else { return }
+                    NSApp.activate(ignoringOtherApps: true)
+                    NSApp.windows.first?.makeKeyAndOrderFront(nil)
+                    self.selectTab(currentTab)
+                }
+                PiPManager.shared.enterPiP(for: currentTab) {
+                    self.activateTab(tab)
+                }
+            } else {
+                self.activateTab(tab)
+            }
+        }
+    }
+
+    private func activateTab(_ tab: BrowserTab) {
+        activeTabId = tab.id
+        addressInput = tab.url.absoluteString
+        isCreatingNewTab = false
+    }
+
+    func selectTab(id: UUID) {
+        guard let tab = tabs.first(where: { $0.id == id }) else { return }
+        selectTab(tab)
+    }
+
+    func navigateToAddressInput() {
+        let input = addressInput.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !input.isEmpty else {
+            isCreatingNewTab = false
+            return
+        }
+
+        let resolvedURL: URL
+        if let url = URL(string: input), url.scheme != nil {
+            resolvedURL = url
+        } else if input.contains(".") && !input.contains(" ") {
+            resolvedURL = URL(string: "https://\(input)")!
+        } else {
+            let query = input.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? input
+            resolvedURL = URL(string: "https://www.google.com/search?q=\(query)")!
+        }
+
+        if isCreatingNewTab {
+            isCreatingNewTab = false
+            addNewTab(url: resolvedURL)
+        } else {
+            guard let tab = activeTab else { return }
+            tab.navigate(to: resolvedURL)
+        }
+    }
+}
