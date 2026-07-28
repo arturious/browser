@@ -10,7 +10,7 @@ import AppKit
 final class UpdateChecker {
     static let shared = UpdateChecker()
 
-    static let currentVersion = "1.0.6"
+    static let currentVersion = "1.0.7"
     private static let repo = "arturious/browser"
 
     private init() {}
