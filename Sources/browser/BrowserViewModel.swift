@@ -8,10 +8,32 @@ final class BrowserViewModel: ObservableObject {
     @Published var addressBarFocusTrigger: Bool = false
     @Published var isCreatingNewTab: Bool = false
 
-    init() {}
+    init() {
+        restoreSession()
+    }
 
     var activeTab: BrowserTab? {
         tabs.first { $0.id == activeTabId }
+    }
+
+    private func restoreSession() {
+        guard let session = SessionStore.load() else { return }
+        for url in session.urls {
+            let tab = BrowserTab(url: url)
+            wireUpPopupHandling(for: tab)
+            tabs.append(tab)
+        }
+        let activeIndex = session.activeIndex.flatMap { tabs.indices.contains($0) ? $0 : nil } ?? 0
+        if tabs.indices.contains(activeIndex) {
+            activateTab(tabs[activeIndex])
+        }
+    }
+
+    /// Saves the currently open tabs' URLs (and which one is active) so they
+    /// can be restored on the next launch.
+    func persistSession() {
+        let activeIndex = activeTabId.flatMap { id in tabs.firstIndex { $0.id == id } }
+        SessionStore.save(urls: tabs.map { $0.url }, activeIndex: activeIndex)
     }
 
     func addNewTab(url: URL = URL(string: "https://www.google.com")!) {
@@ -19,6 +41,7 @@ final class BrowserViewModel: ObservableObject {
         wireUpPopupHandling(for: tab)
         tabs.insert(tab, at: 0)
         selectTab(tab)
+        persistSession()
     }
 
     /// Wires `target="_blank"`/`window.open()` handling: without this,
@@ -65,6 +88,7 @@ final class BrowserViewModel: ObservableObject {
                 selectTab(tabs[min(index, tabs.count - 1)])
             }
         }
+        persistSession()
     }
 
     func closeTab(id: UUID) {
@@ -107,6 +131,7 @@ final class BrowserViewModel: ObservableObject {
         activeTabId = tab.id
         addressInput = tab.url.absoluteString
         isCreatingNewTab = false
+        persistSession()
     }
 
     func selectTab(id: UUID) {

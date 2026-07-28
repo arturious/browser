@@ -272,6 +272,15 @@ final class WebViewCoordinator: NSObject, WKNavigationDelegate {
         }
         tab?.canGoBack = webView.canGoBack
         tab?.canGoForward = webView.canGoForward
+    }
+
+    // Applying the stored zoom here (rather than at didStartProvisionalNavigation)
+    // matters: at that point the new page hasn't replaced the old page's
+    // content yet, so setting pageZoom visibly snaps the *previous* page to
+    // the new site's zoom level for a moment. didCommit fires once the new
+    // page has actually started rendering, so the zoom change lands on the
+    // right content.
+    func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
         tab?.applyStoredZoom(for: webView.url?.host)
     }
 

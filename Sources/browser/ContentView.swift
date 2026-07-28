@@ -220,6 +220,7 @@ struct ContentView: View {
                     if !isEditingAddress && !viewModel.isCreatingNewTab {
                         viewModel.addressInput = newURL.absoluteString
                     }
+                    viewModel.persistSession()
                 }
             } else if viewModel.isCreatingNewTab {
                 HStack(spacing: -4) {
