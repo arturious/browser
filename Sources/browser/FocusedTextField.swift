@@ -28,7 +28,8 @@ struct FocusedTextField: NSViewRepresentable {
         if focusOnAppear {
             DispatchQueue.main.async {
                 field.window?.makeFirstResponder(field)
-                field.currentEditor()?.selectAll(nil)
+                let end = (field.stringValue as NSString).length
+                field.currentEditor()?.selectedRange = NSRange(location: end, length: 0)
             }
         }
 
@@ -37,7 +38,11 @@ struct FocusedTextField: NSViewRepresentable {
 
     func updateNSView(_ nsView: NSTextField, context: Context) {
         if nsView.stringValue != text {
+            // Prevent the AppKit delegate callback from bouncing this write
+            // straight back into SwiftUI during the same update pass.
+            context.coordinator.isProgrammaticUpdate = true
             nsView.stringValue = text
+            context.coordinator.isProgrammaticUpdate = false
         }
     }
 
@@ -49,6 +54,7 @@ struct FocusedTextField: NSViewRepresentable {
         let text: Binding<String>
         let onSubmit: () -> Void
         let onFocusChange: ((Bool) -> Void)?
+        var isProgrammaticUpdate = false
 
         init(text: Binding<String>, onSubmit: @escaping () -> Void, onFocusChange: ((Bool) -> Void)?) {
             self.text = text
@@ -57,8 +63,6 @@ struct FocusedTextField: NSViewRepresentable {
         }
 
         func controlTextDidBeginEditing(_ obj: Notification) {
-            guard let field = obj.object as? NSTextField else { return }
-            field.currentEditor()?.selectAll(nil)
             onFocusChange?(true)
         }
 
@@ -67,6 +71,7 @@ struct FocusedTextField: NSViewRepresentable {
         }
 
         func controlTextDidChange(_ notification: Notification) {
+            guard !isProgrammaticUpdate else { return }
             guard let field = notification.object as? NSTextField else { return }
             text.wrappedValue = field.stringValue
         }

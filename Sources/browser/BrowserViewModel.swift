@@ -38,21 +38,25 @@ final class BrowserViewModel: ObservableObject {
         SessionStore.save(urls: tabs.map { $0.url }, activeIndex: activeIndex)
     }
 
-    func addNewTab(url: URL = URL(string: "https://www.google.com")!) {
+    func addNewTab(url: URL = URL(string: "https://www.google.com")!, activate: Bool = true) {
         let tab = BrowserTab(url: url)
         wireUpPopupHandling(for: tab)
         wireUpPiPHandling(for: tab)
         wireUpNewTabHandling(for: tab)
         tabs.insert(tab, at: 0)
-        selectTab(tab)
+        if activate {
+            selectTab(tab)
+        }
         persistSession()
     }
 
     /// Wires Cmd+click on a link (the standard "open in a new tab" gesture)
-    /// to actually open a new tab — WKWebView doesn't handle this itself.
+    /// to actually open a new tab in the background — WKWebView doesn't
+    /// handle this itself, and a Cmd+click shouldn't jump you away from the
+    /// page you were reading.
     private func wireUpNewTabHandling(for tab: BrowserTab) {
         tab.onOpenInNewTab = { [weak self] url in
-            self?.addNewTab(url: url)
+            self?.addNewTab(url: url, activate: false)
         }
     }
 

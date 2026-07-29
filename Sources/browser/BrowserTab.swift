@@ -13,6 +13,15 @@ final class BrowserTab: Identifiable, ObservableObject {
     @Published var faviconImage: NSImage?
     @Published var zoomLevel: CGFloat = 1.0
     @Published var hasPlayingVideo: Bool = false
+    /// True while any video or audio element on the page is playing — drives
+    /// the little speaker badge on this tab's sidebar icon, unlike
+    /// `hasPlayingVideo` (video only), which drives the PiP button.
+    @Published var isPlayingMedia: Bool = false
+    /// Live progress (0...1) of an in-flight custom swipe-back/forward
+    /// gesture, and its direction — drives the custom swipe overlay instead
+    /// of WebKit's own swipe animation.
+    @Published var swipeProgress: CGFloat = 0
+    @Published var swipeIsBack: Bool = true
 
     let webView: WKWebView
     private var coordinator: WebViewCoordinator?
@@ -20,6 +29,8 @@ final class BrowserTab: Identifiable, ObservableObject {
     private var zoomHost: String?
     private var urlObservation: NSKeyValueObservation?
     private var titleObservation: NSKeyValueObservation?
+    private var canGoBackObservation: NSKeyValueObservation?
+    private var canGoForwardObservation: NSKeyValueObservation?
     private var pipMessageHandler: PiPExitMessageHandler?
     private var videoPlaybackMessageHandler: VideoPlaybackMessageHandler?
 
@@ -46,6 +57,12 @@ final class BrowserTab: Identifiable, ObservableObject {
 
     convenience init(url: URL) {
         let config = WKWebViewConfiguration()
+        // Without this, sites autoplay video/audio the moment a tab loads —
+        // including tabs that were just restored from the last session or
+        // opened via Cmd+click in the background, which shouldn't start
+        // making noise before the user has even looked at them.
+        config.mediaTypesRequiringUserActionForPlayback = .all
+
         // Public API for this (WKWebViewConfiguration.allowsPictureInPictureMediaPlayback)
         // is iOS-only; on macOS the equivalent preference is only reachable
         // via this private key, which several WKWebView-based browsers rely
@@ -94,15 +111,18 @@ final class BrowserTab: Identifiable, ObservableObject {
         let videoPlaybackScript = WKUserScript(
             source: """
             (() => {
-                let lastState = false;
-                function isAnyVideoPlaying() {
-                    return Array.from(document.querySelectorAll('video')).some(v => !v.paused && !v.ended);
-                }
+                let lastVideoState = false;
+                let lastMediaState = false;
+                function isPlaying(el) { return !el.paused && !el.ended; }
                 function report() {
-                    const state = isAnyVideoPlaying();
-                    if (state !== lastState) {
-                        lastState = state;
-                        window.webkit.messageHandlers.videoPlaybackState.postMessage(state);
+                    const videos = Array.from(document.querySelectorAll('video'));
+                    const audios = Array.from(document.querySelectorAll('audio'));
+                    const videoState = videos.some(isPlaying);
+                    const mediaState = videoState || audios.some(isPlaying);
+                    if (videoState !== lastVideoState || mediaState !== lastMediaState) {
+                        lastVideoState = videoState;
+                        lastMediaState = mediaState;
+                        window.webkit.messageHandlers.videoPlaybackState.postMessage({ video: videoState, media: mediaState });
                     }
                 }
                 document.addEventListener('play', report, true);
@@ -165,9 +185,20 @@ final class BrowserTab: Identifiable, ObservableObject {
         self.url = url
         self.title = url.host ?? "New Tab"
 
-        let web = WKWebView(frame: .zero, configuration: configuration)
+        let web = SwipeAwareWebView(frame: .zero, configuration: configuration)
         web.customUserAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Safari/605.1.15"
+        // Using our own swipe overlay (below) instead of WebKit's built-in
+        // swipe animation, which isn't publicly customizable at all.
+        web.allowsBackForwardNavigationGestures = false
         self.webView = web
+
+        web.onSwipeProgress = { [weak self] progress, isBack in
+            self?.swipeProgress = progress
+            self?.swipeIsBack = isBack
+        }
+        web.onSwipeCommitted = { [weak self] _ in
+            self?.swipeProgress = 0
+        }
 
         let coordinator = WebViewCoordinator(tab: self)
         web.navigationDelegate = coordinator
@@ -200,18 +231,79 @@ final class BrowserTab: Identifiable, ObservableObject {
                 self?.title = newTitle
             }
         }
+
+        // WKWebView updates its back-forward list asynchronously — reading
+        // canGoBack/canGoForward from navigation delegate callbacks (as
+        // didStartProvisionalNavigation/didFinish used to) can catch it
+        // before that update lands, leaving the back button looking
+        // disabled right after a navigation that should have enabled it.
+        // Observing the properties directly is the reliable way to catch
+        // the change whenever it actually happens.
+        canGoBackObservation = web.observe(\.canGoBack, options: [.new]) { [weak self] _, change in
+            guard let canGoBack = change.newValue else { return }
+            DispatchQueue.main.async {
+                self?.canGoBack = canGoBack
+            }
+        }
+        canGoForwardObservation = web.observe(\.canGoForward, options: [.new]) { [weak self] _, change in
+            guard let canGoForward = change.newValue else { return }
+            DispatchQueue.main.async {
+                self?.canGoForward = canGoForward
+            }
+        }
     }
 
+    /// Reads the favicon the page itself declares (`<link rel="icon">` and
+    /// friends) rather than guessing one from the domain alone — a
+    /// domain-only lookup (e.g. Google's s2/favicons service) can't tell
+    /// mail.google.com's Gmail icon apart from google.com's, since it has no
+    /// way to know what a specific page actually points to.
     func loadFavicon() {
         guard let host = url.host, host != faviconHost else { return }
         faviconHost = host
-        guard let iconURL = URL(string: "https://www.google.com/s2/favicons?sz=64&domain=\(host)") else { return }
 
-        URLSession.shared.dataTask(with: iconURL) { [weak self] data, _, _ in
-            guard let data, let image = NSImage(data: data) else { return }
-            Task { @MainActor in
-                self?.faviconImage = image
+        let script = """
+        (() => {
+            const selectors = [
+                'link[rel="icon"]',
+                'link[rel="shortcut icon"]',
+                'link[rel="apple-touch-icon"]',
+                'link[rel="apple-touch-icon-precomposed"]'
+            ];
+            for (const sel of selectors) {
+                const el = document.querySelector(sel);
+                if (el && el.href) return el.href;
             }
+            return null;
+        })();
+        """
+        webView.evaluateJavaScript(script) { [weak self] result, _ in
+            guard let self else { return }
+            if let href = result as? String, let iconURL = URL(string: href) {
+                self.fetchFavicon(from: iconURL, fallbackHost: host)
+            } else if let rootIconURL = URL(string: "https://\(host)/favicon.ico") {
+                self.fetchFavicon(from: rootIconURL, fallbackHost: host)
+            }
+        }
+    }
+
+    private func fetchFavicon(from iconURL: URL, fallbackHost: String) {
+        URLSession.shared.dataTask(with: iconURL) { [weak self] data, response, _ in
+            guard let self else { return }
+            let succeeded = (response as? HTTPURLResponse).map { $0.statusCode == 200 } ?? true
+            if succeeded, let data, let image = NSImage(data: data) {
+                Task { @MainActor in self.faviconImage = image }
+            } else {
+                Task { @MainActor in self.fetchFallbackFavicon(forHost: fallbackHost) }
+            }
+        }.resume()
+    }
+
+    private func fetchFallbackFavicon(forHost host: String) {
+        guard let iconURL = URL(string: "https://www.google.com/s2/favicons?sz=64&domain=\(host)") else { return }
+        URLSession.shared.dataTask(with: iconURL) { [weak self] data, _, _ in
+            guard let self, let data, let image = NSImage(data: data) else { return }
+            Task { @MainActor in self.faviconImage = image }
         }.resume()
     }
 
@@ -294,7 +386,9 @@ private final class VideoPlaybackMessageHandler: NSObject, WKScriptMessageHandle
     weak var tab: BrowserTab?
 
     func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
-        tab?.hasPlayingVideo = (message.body as? Bool) ?? false
+        guard let body = message.body as? [String: Bool] else { return }
+        tab?.hasPlayingVideo = body["video"] ?? false
+        tab?.isPlayingMedia = body["media"] ?? false
     }
 }
 
@@ -320,8 +414,6 @@ final class WebViewCoordinator: NSObject, WKNavigationDelegate {
         if let url = webView.url {
             tab?.url = url
         }
-        tab?.canGoBack = webView.canGoBack
-        tab?.canGoForward = webView.canGoForward
     }
 
     // Applying the stored zoom here (rather than at didStartProvisionalNavigation)
@@ -337,8 +429,6 @@ final class WebViewCoordinator: NSObject, WKNavigationDelegate {
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         guard let tab else { return }
         tab.isLoading = false
-        tab.canGoBack = webView.canGoBack
-        tab.canGoForward = webView.canGoForward
         if let title = webView.title, !title.isEmpty {
             tab.title = title
         }

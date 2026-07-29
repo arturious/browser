@@ -3,6 +3,7 @@ import AppKit
 
 private struct HoveredTabInfo: Equatable {
     let title: String
+    let isPlayingMedia: Bool
     let frame: CGRect
 }
 
@@ -58,6 +59,9 @@ struct ContentView: View {
                                 .opacity(tab.id == viewModel.activeTabId ? 1 : 0)
                                 .allowsHitTesting(tab.id == viewModel.activeTabId)
                         }
+                        if let tab = viewModel.activeTab {
+                            SwipeNavigationOverlay(tab: tab)
+                        }
                     }
                     .clipShape(RoundedRectangle(cornerRadius: 8))
                     .padding(.leading, isSidebarVisible ? 0 : 8)
@@ -76,18 +80,26 @@ struct ContentView: View {
         .coordinateSpace(name: "browserRoot")
         .overlay(alignment: .topLeading) {
             if let info = hoveredTabInfo {
-                Text(info.title)
-                    .font(.custom("Verdana", size: 10))
-                    .foregroundColor(.white)
-                    .lineLimit(1)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 3)
-                    .background(Color(white: 0.12))
-                    .shadow(color: .black.opacity(0.4), radius: 4, y: 2)
-                    .fixedSize()
-                    .offset(x: info.frame.maxX - 10, y: info.frame.minY + 27)
-                    .allowsHitTesting(false)
-                    .animation(nil, value: info)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(info.title)
+                        .font(.custom("Verdana", size: 10))
+                        .foregroundColor(.white)
+                        .lineLimit(1)
+                    if info.isPlayingMedia {
+                        Text("Playing audio")
+                            .font(.custom("Verdana", size: 10))
+                            .foregroundColor(Color(white: 0.65))
+                            .lineLimit(1)
+                    }
+                }
+                .padding(.horizontal, 8)
+                .padding(.vertical, 3)
+                .background(Color(white: 0.12))
+                .shadow(color: .black.opacity(0.4), radius: 4, y: 2)
+                .fixedSize()
+                .offset(x: info.frame.maxX - 10, y: info.frame.minY + 27)
+                .allowsHitTesting(false)
+                .animation(nil, value: info)
             }
         }
         .onPreferenceChange(HoveredTabKey.self) { hoveredTabInfo = $0 }
@@ -180,7 +192,7 @@ struct ContentView: View {
             HStack(spacing: 16) {
                 HStack(spacing: 0) {
                     ToolbarIconButton(systemName: "sidebar.left") {
-                        withAnimation(.easeInOut(duration: 0.2)) {
+                        withAnimation(.easeInOut(duration: 0.12)) {
                             isSidebarVisible.toggle()
                         }
                     }
@@ -273,7 +285,6 @@ struct ContentView: View {
                     }
                 }
             }
-            .scrollClipDisabled()
             Spacer()
         }
         .frame(width: 56)
@@ -316,6 +327,7 @@ private struct SidebarIcon: View {
             faviconLetter: tab.faviconLetter,
             title: tab.title,
             isActive: isActive,
+            isPlayingMedia: tab.isPlayingMedia,
             onSelect: onSelect,
             onClose: onClose
         )
@@ -334,6 +346,7 @@ private struct SidebarIconBody: View {
     let faviconLetter: String
     let title: String
     let isActive: Bool
+    let isPlayingMedia: Bool
     let onSelect: () -> Void
     let onClose: () -> Void
     @State private var isHovering = false
@@ -344,21 +357,30 @@ private struct SidebarIconBody: View {
                 .fill(isActive ? Color.white.opacity(0.15) : Color.white.opacity(isHovering ? 0.1 : 0))
                 .frame(width: 48, height: 36)
 
-            if let image = faviconImage {
-                Image(nsImage: image)
-                    .resizable()
-                    .aspectRatio(contentMode: .fit)
-                    .frame(width: 16, height: 16)
-                    .clipShape(RoundedRectangle(cornerRadius: 3))
-            } else {
-                Circle()
-                    .fill(faviconColor)
-                    .frame(width: 16, height: 16)
-                    .overlay(
-                        Text(faviconLetter)
-                            .font(.system(size: 8, weight: .semibold))
-                            .foregroundColor(.white)
-                    )
+            ZStack(alignment: .topTrailing) {
+                if let image = faviconImage {
+                    Image(nsImage: image)
+                        .resizable()
+                        .aspectRatio(contentMode: .fit)
+                        .frame(width: 16, height: 16)
+                        .clipShape(RoundedRectangle(cornerRadius: 3))
+                } else {
+                    Circle()
+                        .fill(faviconColor)
+                        .frame(width: 16, height: 16)
+                        .overlay(
+                            Text(faviconLetter)
+                                .font(.system(size: 8, weight: .semibold))
+                                .foregroundColor(.white)
+                        )
+                }
+
+                if isPlayingMedia {
+                    Image(systemName: "speaker.wave.2")
+                        .font(.system(size: 10, weight: .regular))
+                        .foregroundColor(Color(red: 0xA9 / 255, green: 0xA9 / 255, blue: 0xA9 / 255))
+                        .offset(x: 9, y: -4)
+                }
             }
         }
         .contentShape(Rectangle())
@@ -370,7 +392,7 @@ private struct SidebarIconBody: View {
             GeometryReader { proxy in
                 Color.clear.preference(
                     key: HoveredTabKey.self,
-                    value: isHovering ? HoveredTabInfo(title: title, frame: proxy.frame(in: .named("browserRoot"))) : nil
+                    value: isHovering ? HoveredTabInfo(title: title, isPlayingMedia: isPlayingMedia, frame: proxy.frame(in: .named("browserRoot"))) : nil
                 )
             }
         )
@@ -477,6 +499,47 @@ private struct DownloadProgressPie: Shape {
         )
         path.closeSubpath()
         return path
+    }
+}
+
+/// Our own visual for the trackpad swipe-back/forward gesture, replacing
+/// WebKit's built-in swipe animation (which isn't publicly customizable at
+/// all — see SwipeAwareWebView, which reports live gesture progress instead
+/// of letting WebKit handle the gesture itself).
+private struct SwipeNavigationOverlay: View {
+    @ObservedObject var tab: BrowserTab
+
+    var body: some View {
+        HStack(spacing: 0) {
+            if tab.swipeIsBack {
+                indicator
+                Spacer(minLength: 0)
+            } else {
+                Spacer(minLength: 0)
+                indicator
+            }
+        }
+        .allowsHitTesting(false)
+    }
+
+    private var indicator: some View {
+        ZStack {
+            LinearGradient(
+                colors: [Color.black.opacity(0.4 * tab.swipeProgress), .clear],
+                startPoint: tab.swipeIsBack ? .leading : .trailing,
+                endPoint: tab.swipeIsBack ? .trailing : .leading
+            )
+
+            Image(systemName: tab.swipeIsBack ? "chevron.left" : "chevron.right")
+                .font(.system(size: 22, weight: .bold))
+                .foregroundColor(.white.opacity(tab.swipeProgress))
+                .scaleEffect(0.7 + 0.3 * tab.swipeProgress)
+                .frame(maxWidth: 100, alignment: tab.swipeIsBack ? .leading : .trailing)
+                .padding(tab.swipeIsBack ? .leading : .trailing, 16)
+        }
+        .frame(width: 100)
+        .frame(maxHeight: .infinity)
+        .animation(.easeOut(duration: 0.12), value: tab.swipeProgress)
     }
 }
 
@@ -781,14 +844,14 @@ private struct NewTabAddressField: View {
     }
 
     private func measuredWidth(_ text: String) -> CGFloat {
-        let field = NSTextField(string: text)
-        field.font = .systemFont(ofSize: 13, weight: .medium)
-        field.isBordered = false
-        field.drawsBackground = false
-        field.usesSingleLineMode = true
-        field.cell?.wraps = false
-        field.cell?.isScrollable = true
-        let width = field.cell?.cellSize(forBounds: NSRect(x: 0, y: 0, width: CGFloat.greatestFiniteMagnitude, height: 20)).width ?? 0
+        // Deliberately not NSTextField-based: instantiating a fresh
+        // NSTextField on every keystroke (this runs once per character typed)
+        // was found to disturb the real address field's live editing session
+        // — likely via the window's shared field editor — resetting its
+        // selection to "select all" right after each character. Measuring
+        // via NSAttributedString sidesteps NSControl/field-editor machinery
+        // entirely.
+        let width = (text as NSString).size(withAttributes: [.font: NSFont.systemFont(ofSize: 13, weight: .medium)]).width
         return min(max(width, 1), 600)
     }
 }
@@ -847,14 +910,14 @@ private struct AddressDisplayButton: View {
     }
 
     private func measuredWidth(_ text: String) -> CGFloat {
-        let field = NSTextField(string: text)
-        field.font = .systemFont(ofSize: 13, weight: .medium)
-        field.isBordered = false
-        field.drawsBackground = false
-        field.usesSingleLineMode = true
-        field.cell?.wraps = false
-        field.cell?.isScrollable = true
-        let width = field.cell?.cellSize(forBounds: NSRect(x: 0, y: 0, width: CGFloat.greatestFiniteMagnitude, height: 20)).width ?? 0
+        // Deliberately not NSTextField-based: instantiating a fresh
+        // NSTextField on every keystroke (this runs once per character typed)
+        // was found to disturb the real address field's live editing session
+        // — likely via the window's shared field editor — resetting its
+        // selection to "select all" right after each character. Measuring
+        // via NSAttributedString sidesteps NSControl/field-editor machinery
+        // entirely.
+        let width = (text as NSString).size(withAttributes: [.font: NSFont.systemFont(ofSize: 13, weight: .medium)]).width
         return min(max(width, 1), 600)
     }
 }
