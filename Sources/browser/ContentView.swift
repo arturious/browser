@@ -376,10 +376,15 @@ private struct SidebarIconBody: View {
                 }
 
                 if isPlayingMedia {
-                    Image(systemName: "speaker.wave.2")
-                        .font(.system(size: 10, weight: .regular))
-                        .foregroundColor(Color(red: 0xA9 / 255, green: 0xA9 / 255, blue: 0xA9 / 255))
-                        .offset(x: 9, y: -4)
+                    Circle()
+                        .fill(Color(white: 0.15))
+                        .frame(width: 16, height: 16)
+                        .overlay(
+                            Image(systemName: "speaker.wave.2")
+                                .font(.system(size: 11, weight: .regular))
+                                .foregroundColor(Color(red: 0xC5 / 255, green: 0xC5 / 255, blue: 0xC5 / 255))
+                        )
+                        .offset(x: 7, y: -7)
                 }
             }
         }
@@ -833,7 +838,7 @@ private struct NewTabAddressField: View {
             text: $addressInput,
             placeholder: "Search or enter address.",
             font: .systemFont(ofSize: 13, weight: .medium),
-            alignment: .center,
+            alignment: .left,
             focusOnAppear: true,
             onSubmit: onSubmit,
             onFocusChange: onFocusChange
@@ -844,13 +849,6 @@ private struct NewTabAddressField: View {
     }
 
     private func measuredWidth(_ text: String) -> CGFloat {
-        // Deliberately not NSTextField-based: instantiating a fresh
-        // NSTextField on every keystroke (this runs once per character typed)
-        // was found to disturb the real address field's live editing session
-        // — likely via the window's shared field editor — resetting its
-        // selection to "select all" right after each character. Measuring
-        // via NSAttributedString sidesteps NSControl/field-editor machinery
-        // entirely.
         let width = (text as NSString).size(withAttributes: [.font: NSFont.systemFont(ofSize: 13, weight: .medium)]).width
         return min(max(width, 1), 600)
     }
@@ -871,7 +869,7 @@ private struct AddressDisplayButton: View {
                     text: $addressInput,
                     placeholder: "Search or enter address.",
                     font: .systemFont(ofSize: 13, weight: .medium),
-                    alignment: .center,
+                    alignment: .left,
                     focusOnAppear: true,
                     onSubmit: {
                         onSubmit()
@@ -910,13 +908,6 @@ private struct AddressDisplayButton: View {
     }
 
     private func measuredWidth(_ text: String) -> CGFloat {
-        // Deliberately not NSTextField-based: instantiating a fresh
-        // NSTextField on every keystroke (this runs once per character typed)
-        // was found to disturb the real address field's live editing session
-        // — likely via the window's shared field editor — resetting its
-        // selection to "select all" right after each character. Measuring
-        // via NSAttributedString sidesteps NSControl/field-editor machinery
-        // entirely.
         let width = (text as NSString).size(withAttributes: [.font: NSFont.systemFont(ofSize: 13, weight: .medium)]).width
         return min(max(width, 1), 600)
     }

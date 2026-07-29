@@ -26,14 +26,28 @@ struct FocusedTextField: NSViewRepresentable {
         field.usesSingleLineMode = true
 
         if focusOnAppear {
-            DispatchQueue.main.async {
-                field.window?.makeFirstResponder(field)
-                let end = (field.stringValue as NSString).length
-                field.currentEditor()?.selectedRange = NSRange(location: end, length: 0)
-            }
+            Self.requestFocus(for: field, attemptsRemaining: 10)
         }
 
         return field
+    }
+
+    /// The field can appear before it's actually attached to a window (e.g.
+    /// right as a new tab's address bar swaps in), in which case
+    /// `field.window` is still nil and a single deferred focus attempt
+    /// silently does nothing — hence the retry, giving it a few more run
+    /// loop turns to actually land in the view hierarchy.
+    private static func requestFocus(for field: NSTextField, attemptsRemaining: Int) {
+        guard attemptsRemaining > 0 else { return }
+        DispatchQueue.main.async {
+            guard let window = field.window else {
+                requestFocus(for: field, attemptsRemaining: attemptsRemaining - 1)
+                return
+            }
+            window.makeFirstResponder(field)
+            let end = (field.stringValue as NSString).length
+            field.currentEditor()?.selectedRange = NSRange(location: end, length: 0)
+        }
     }
 
     func updateNSView(_ nsView: NSTextField, context: Context) {
