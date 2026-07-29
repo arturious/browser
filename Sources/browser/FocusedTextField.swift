@@ -45,8 +45,7 @@ struct FocusedTextField: NSViewRepresentable {
                 return
             }
             window.makeFirstResponder(field)
-            let end = (field.stringValue as NSString).length
-            field.currentEditor()?.selectedRange = NSRange(location: end, length: 0)
+            field.currentEditor()?.selectAll(nil)
         }
     }
 

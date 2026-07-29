@@ -70,6 +70,12 @@ struct ContentView: View {
                 }
                 .frame(maxHeight: .infinity)
             }
+            .overlay(alignment: .top) {
+                if let tab = viewModel.activeTab {
+                    PageLoadingBar(tab: tab)
+                        .padding(.top, 38)
+                }
+            }
             .background(Color.black)
             .clipShape(RoundedRectangle(cornerRadius: 10))
             .padding(8)
@@ -228,7 +234,6 @@ struct ContentView: View {
                         isEditing: $isEditingAddress
                     )
                     PiPToggleButton(tab: tab)
-                        .padding(.leading, 6)
                 }
                 .onChange(of: tab.url) { _, newURL in
                     if !isEditingAddress && !viewModel.isCreatingNewTab {
@@ -511,6 +516,76 @@ private struct DownloadProgressPie: Shape {
 /// WebKit's built-in swipe animation (which isn't publicly customizable at
 /// all — see SwipeAwareWebView, which reports live gesture progress instead
 /// of letting WebKit handle the gesture itself).
+/// A thin bar tracking WKWebView's own page-load progress, shown at the top
+/// of the content area — the same idea as Chrome/YouTube's loading bar.
+/// A small pill-shaped loading indicator, styled after Zen Browser's: it
+/// pulses gently (breathing scale + opacity) while a page loads, and if
+/// loading takes more than a few seconds, settles into a steady wider pill
+/// with a shimmer sweeping across it — rather than tracking exact load
+/// percentage like a traditional progress bar.
+private struct PageLoadingBar: View {
+    @ObservedObject var tab: BrowserTab
+    @State private var isLongLoad = false
+    @State private var isPulsing = false
+    @State private var shimmerOffset: CGFloat = -1
+    @State private var longLoadTask: Task<Void, Never>?
+
+    private let pillWidth: CGFloat = 70
+    private let longLoadWidth: CGFloat = 140
+    private let pillHeight: CGFloat = 5
+
+    var body: some View {
+        Capsule()
+            .fill(tab.themeColor ?? Color(white: 0.6))
+            .overlay {
+                if isLongLoad {
+                    GeometryReader { proxy in
+                        Capsule()
+                            .fill(Color.white.opacity(0.35))
+                            .frame(width: proxy.size.width * 0.6)
+                            .offset(x: shimmerOffset * proxy.size.width * 1.6)
+                    }
+                    .clipShape(Capsule())
+                }
+            }
+            .frame(width: isLongLoad ? longLoadWidth : pillWidth, height: pillHeight)
+            .scaleEffect(tab.isLoading ? (isLongLoad ? 1 : (isPulsing ? 0.95 : 0.85)) : 0.01)
+            .opacity(tab.isLoading ? (isLongLoad ? 1 : (isPulsing ? 1 : 0.6)) : 0)
+            .animation(.easeOut(duration: 0.3), value: tab.isLoading)
+            .animation(.easeOut(duration: 0.3), value: isLongLoad)
+            .animation(
+                tab.isLoading && !isLongLoad
+                    ? .easeInOut(duration: 1).repeatForever(autoreverses: true)
+                    : .default,
+                value: isPulsing
+            )
+            .allowsHitTesting(false)
+            .onChange(of: tab.isLoading) { _, loading in
+                longLoadTask?.cancel()
+                if loading {
+                    isLongLoad = false
+                    isPulsing = false
+                    DispatchQueue.main.async { isPulsing = true }
+                    longLoadTask = Task {
+                        try? await Task.sleep(nanoseconds: 3_000_000_000)
+                        guard !Task.isCancelled, tab.isLoading else { return }
+                        isLongLoad = true
+                        startShimmer()
+                    }
+                } else {
+                    isLongLoad = false
+                }
+            }
+    }
+
+    private func startShimmer() {
+        shimmerOffset = -1
+        withAnimation(.linear(duration: 1).repeatForever(autoreverses: false)) {
+            shimmerOffset = 1
+        }
+    }
+}
+
 private struct SwipeNavigationOverlay: View {
     @ObservedObject var tab: BrowserTab
 

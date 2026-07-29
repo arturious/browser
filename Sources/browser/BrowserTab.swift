@@ -22,6 +22,12 @@ final class BrowserTab: Identifiable, ObservableObject {
     /// of WebKit's own swipe animation.
     @Published var swipeProgress: CGFloat = 0
     @Published var swipeIsBack: Bool = true
+    /// WKWebView's own page-load progress (0...1) — drives the thin loading
+    /// bar under the topbar, the same idea as Chrome/YouTube's.
+    @Published var loadingProgress: Double = 0
+    /// The page's declared `<meta name="theme-color">`, if any — colors the
+    /// loading bar to match the site instead of a fixed accent color.
+    @Published var themeColor: Color?
 
     let webView: WKWebView
     private var coordinator: WebViewCoordinator?
@@ -31,6 +37,7 @@ final class BrowserTab: Identifiable, ObservableObject {
     private var titleObservation: NSKeyValueObservation?
     private var canGoBackObservation: NSKeyValueObservation?
     private var canGoForwardObservation: NSKeyValueObservation?
+    private var estimatedProgressObservation: NSKeyValueObservation?
     private var pipMessageHandler: PiPExitMessageHandler?
     private var videoPlaybackMessageHandler: VideoPlaybackMessageHandler?
 
@@ -251,6 +258,41 @@ final class BrowserTab: Identifiable, ObservableObject {
                 self?.canGoForward = canGoForward
             }
         }
+        estimatedProgressObservation = web.observe(\.estimatedProgress, options: [.new]) { [weak self] _, change in
+            guard let progress = change.newValue else { return }
+            DispatchQueue.main.async {
+                self?.loadingProgress = progress
+            }
+        }
+    }
+
+    /// Reads the page's declared `<meta name="theme-color">`, if any, to
+    /// color the loading bar like the site's own chrome instead of a fixed
+    /// accent color.
+    func loadThemeColor() {
+        let script = """
+        (() => {
+            const el = document.querySelector('meta[name="theme-color"]');
+            return el ? el.content : null;
+        })();
+        """
+        webView.evaluateJavaScript(script) { [weak self] result, _ in
+            guard let self else { return }
+            guard let value = result as? String, let color = Color(cssColor: value) else {
+                self.themeColor = nil
+                return
+            }
+            if color.isNearWhite {
+                // A near-white theme-color (e.g. YouTube's own light
+                // toolbar) would barely show up on our dark chrome, so use
+                // a dark bar instead of the site's actual (washed-out) color.
+                self.themeColor = Color(white: 0.15)
+            } else if color.isDistinctColor {
+                self.themeColor = color
+            } else {
+                self.themeColor = nil
+            }
+        }
     }
 
     /// Reads the favicon the page itself declares (`<link rel="icon">` and
@@ -436,6 +478,7 @@ final class WebViewCoordinator: NSObject, WKNavigationDelegate {
             tab.url = url
         }
         tab.loadFavicon()
+        tab.loadThemeColor()
     }
 
     func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
