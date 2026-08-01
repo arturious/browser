@@ -76,6 +76,12 @@ final class BrowserTab: Identifiable, ObservableObject {
         // on to get native video PiP working at all.
         config.preferences.setValue(true, forKey: "allowsPictureInPictureMediaPlayback")
 
+        // Without this, the page's own `element.requestFullscreen()` (used
+        // by e.g. YouTube's fullscreen button, not just a plain <video>'s
+        // native controls) silently does nothing in WKWebView — this is a
+        // real public API (macOS 12.3+), unlike the PiP preference above.
+        config.preferences.isElementFullscreenEnabled = true
+
         let handler = PiPExitMessageHandler()
         config.userContentController.add(handler, name: "pipExited")
         let script = WKUserScript(

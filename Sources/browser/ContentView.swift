@@ -37,6 +37,15 @@ struct ContentView: View {
 
     var body: some View {
         ZStack {
+            // Must stay unclipped at this top level — nesting it inside a
+            // `.background()` that itself gets `.clipShape()`'d (as the
+            // content panel below does) forces SwiftUI to composite it
+            // through an offscreen layer, which breaks NSVisualEffectView's
+            // `.behindWindow` blending mode entirely (renders solid black
+            // instead of blurring what's behind the window). Left plain
+            // (untinted) here — the thin margin this shows through (from
+            // the content panel's own `.padding(8)` below) is meant to look
+            // like plain blur, distinct from that panel's own tinted blur.
             VisualEffectBlur()
 
             VStack(spacing: 0) {
@@ -76,7 +85,7 @@ struct ContentView: View {
                         .padding(.top, 38)
                 }
             }
-            .background(Color.black)
+            .background(Color.black.opacity(0.45))
             .clipShape(RoundedRectangle(cornerRadius: 10))
             .padding(8)
         }
@@ -258,12 +267,11 @@ struct ContentView: View {
         .frame(maxWidth: .infinity)
         .frame(height: 34)
         .buttonStyle(.borderless)
-        .background(
-            ZStack {
-                Color.black
-                WindowDragArea()
-            }
-        )
+        // No tint of its own — the single window-wide tint behind
+        // everything (see `body` above) already shows through uniformly;
+        // adding a second one here just double-stacked with it, mismatching
+        // the untinted margin around the rounded content by comparison.
+        .background(WindowDragArea())
         .onChange(of: viewModel.addressBarFocusTrigger) { _, _ in
             isEditingAddress = true
         }
@@ -293,7 +301,6 @@ struct ContentView: View {
             Spacer()
         }
         .frame(width: 56)
-        .background(Color.black)
     }
 }
 
