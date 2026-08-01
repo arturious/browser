@@ -1,6 +1,28 @@
 import SwiftUI
 import AppKit
 
+private extension NSImage {
+    /// A pre-rendered, 45°-rotated "pin" SF Symbol — SwiftUI's context
+    /// menus don't honor `.rotationEffect` (or most other modifiers) on a
+    /// `Label`'s icon when converting it to the menu item's actual
+    /// `NSImage`, so the rotation has to be baked into the image itself.
+    static let diagonalPin: NSImage = {
+        let original = NSImage(systemSymbolName: "pin", accessibilityDescription: nil) ?? NSImage()
+        let size = original.size
+        let rotated = NSImage(size: size)
+        rotated.lockFocus()
+        let transform = NSAffineTransform()
+        transform.translateX(by: size.width / 2, yBy: size.height / 2)
+        transform.rotate(byDegrees: 45)
+        transform.translateX(by: -size.width / 2, yBy: -size.height / 2)
+        transform.concat()
+        original.draw(at: .zero, from: .zero, operation: .sourceOver, fraction: 1.0)
+        rotated.unlockFocus()
+        rotated.isTemplate = true
+        return rotated
+    }()
+}
+
 private struct HoveredTabInfo: Equatable {
     let title: String
     let isPlayingMedia: Bool
@@ -24,6 +46,16 @@ private struct DownloadsIconFrameKey: PreferenceKey {
     }
 }
 
+private struct HistoryIconFrameKey: PreferenceKey {
+    static let defaultValue: CGRect = .zero
+    static func reduce(value: inout CGRect, nextValue: () -> CGRect) {
+        let next = nextValue()
+        if next != .zero {
+            value = next
+        }
+    }
+}
+
 struct ContentView: View {
     @StateObject private var viewModel = BrowserViewModel()
     @State private var isSidebarVisible = true
@@ -34,6 +66,8 @@ struct ContentView: View {
     @State private var downloadsIconFrame: CGRect = .zero
     @State private var activeFlyRequests: [DownloadFlyRequest] = []
     @State private var isDownloadsListShowing = false
+    @State private var historyIconFrame: CGRect = .zero
+    @State private var isHistoryListShowing = false
 
     var body: some View {
         ZStack {
@@ -128,12 +162,16 @@ struct ContentView: View {
             }
         }
         .onPreferenceChange(DownloadsIconFrameKey.self) { downloadsIconFrame = $0 }
+        .onPreferenceChange(HistoryIconFrameKey.self) { historyIconFrame = $0 }
         .overlay(alignment: .topLeading) {
-            if isDownloadsListShowing {
+            if isDownloadsListShowing || isHistoryListShowing {
                 Color.clear
                     .contentShape(Rectangle())
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .onTapGesture { isDownloadsListShowing = false }
+                    .onTapGesture {
+                        isDownloadsListShowing = false
+                        isHistoryListShowing = false
+                    }
                     .allowsHitTesting(true)
             }
         }
@@ -141,6 +179,13 @@ struct ContentView: View {
             if isDownloadsListShowing && downloadsIconFrame != .zero {
                 DownloadsListView(manager: downloadManager)
                     .offset(x: downloadsIconFrame.maxX - 280, y: downloadsIconFrame.maxY + 6)
+                    .transition(.opacity.combined(with: .scale(scale: 0.96, anchor: .topTrailing)))
+            }
+        }
+        .overlay(alignment: .topLeading) {
+            if isHistoryListShowing && historyIconFrame != .zero {
+                HistoryListView()
+                    .offset(x: historyIconFrame.maxX - 280, y: historyIconFrame.maxY + 6)
                     .transition(.opacity.combined(with: .scale(scale: 0.96, anchor: .topTrailing)))
             }
         }
@@ -220,8 +265,11 @@ struct ContentView: View {
 
                 Spacer(minLength: 20)
 
-                DownloadsButton(isShowingList: $isDownloadsListShowing)
-                    .padding(.trailing, 12)
+                HStack(spacing: 4) {
+                    HistoryButton(isShowingList: $isHistoryListShowing)
+                    DownloadsButton(isShowingList: $isDownloadsListShowing)
+                }
+                .padding(.trailing, 12)
             }
 
             if let tab = viewModel.activeTab {
@@ -279,28 +327,38 @@ struct ContentView: View {
 
     private var sidebar: some View {
         VStack(spacing: 4) {
-            SidebarAddButton {
-                viewModel.startNewTab()
+            ForEach(viewModel.tabs.filter(\.isPinned)) { tab in
+                sidebarIcon(for: tab)
             }
             .padding(.top, 8)
 
+            SidebarAddButton {
+                viewModel.startNewTab()
+            }
+
             ScrollView(.vertical, showsIndicators: false) {
                 VStack(spacing: 4) {
-                    ForEach(viewModel.tabs) { tab in
-                        let tabId = tab.id
-                        SidebarIcon(tab: tab, isActive: tabId == viewModel.activeTabId) {
-                            isEditingAddress = false
-                            NSApp.keyWindow?.makeFirstResponder(nil)
-                            viewModel.selectTab(id: tabId)
-                        } onClose: {
-                            viewModel.closeTab(id: tabId)
-                        }
+                    ForEach(viewModel.tabs.filter { !$0.isPinned }) { tab in
+                        sidebarIcon(for: tab)
                     }
                 }
             }
             Spacer()
         }
         .frame(width: 56)
+    }
+
+    private func sidebarIcon(for tab: BrowserTab) -> some View {
+        let tabId = tab.id
+        return SidebarIcon(tab: tab, isActive: tabId == viewModel.activeTabId) {
+            isEditingAddress = false
+            NSApp.keyWindow?.makeFirstResponder(nil)
+            viewModel.selectTab(id: tabId)
+        } onClose: {
+            viewModel.closeTab(id: tabId)
+        } onTogglePin: {
+            viewModel.togglePin(tab)
+        }
     }
 }
 
@@ -331,6 +389,7 @@ private struct SidebarIcon: View {
     let isActive: Bool
     let onSelect: () -> Void
     let onClose: () -> Void
+    let onTogglePin: () -> Void
 
     var body: some View {
         SidebarIconBody(
@@ -340,8 +399,10 @@ private struct SidebarIcon: View {
             title: tab.title,
             isActive: isActive,
             isPlayingMedia: tab.isPlayingMedia,
+            isPinned: tab.isPinned,
             onSelect: onSelect,
-            onClose: onClose
+            onClose: onClose,
+            onTogglePin: onTogglePin
         )
     }
 }
@@ -359,8 +420,10 @@ private struct SidebarIconBody: View {
     let title: String
     let isActive: Bool
     let isPlayingMedia: Bool
+    let isPinned: Bool
     let onSelect: () -> Void
     let onClose: () -> Void
+    let onTogglePin: () -> Void
     @State private var isHovering = false
 
     var body: some View {
@@ -402,7 +465,38 @@ private struct SidebarIconBody: View {
         }
         .contentShape(Rectangle())
         .overlay(ClickCountCatcher(onSelect: onSelect, onClose: onClose))
+        .overlay(alignment: .topLeading) {
+            if isPinned {
+                // Always visible, purely a status indicator — not a
+                // button, doesn't intercept clicks meant for the tab itself.
+                Image(nsImage: .diagonalPin)
+                    .renderingMode(.template)
+                    .foregroundColor(Color(white: 0.6))
+                    .frame(width: 14, height: 14)
+                    .offset(x: -1, y: -3)
+                    .allowsHitTesting(false)
+            } else if isHovering {
+                Button(action: onClose) {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundColor(Color(white: 0.75))
+                        .frame(width: 16, height: 16)
+                }
+                .buttonStyle(.plain)
+                .offset(x: -2, y: -4)
+                .transition(.opacity)
+            }
+        }
         .contextMenu {
+            Button {
+                onTogglePin()
+            } label: {
+                Label {
+                    Text(isPinned ? "Unpin" : "Pin")
+                } icon: {
+                    Image(nsImage: .diagonalPin)
+                }
+            }
             Button("Close Tab", role: .destructive, action: onClose)
         }
         .background(
@@ -655,6 +749,63 @@ private struct PiPToggleButton: View {
             }
             .opacity(tab.hasPlayingVideo ? 1 : 0)
             .allowsHitTesting(tab.hasPlayingVideo)
+    }
+}
+
+private struct HistoryButton: View {
+    @Binding var isShowingList: Bool
+    @State private var isHovering = false
+    @State private var wiggleTrigger = 0
+
+    var body: some View {
+        Image(systemName: "clock.arrow.trianglehead.counterclockwise.rotate.90")
+            .font(.system(size: 14, weight: .bold))
+            .symbolEffect(.wiggle, options: .nonRepeating, value: wiggleTrigger)
+            .foregroundColor(Color(red: 0xAC / 255, green: 0xAC / 255, blue: 0xAC / 255))
+            .frame(width: 32, height: 24)
+            .background(
+                RoundedRectangle(cornerRadius: 6)
+                    .fill(Color.white.opacity(isHovering ? 0.12 : 0))
+            )
+            .contentShape(Rectangle())
+            .onTapGesture {
+                wiggleTrigger += 1
+                isShowingList.toggle()
+            }
+            .onHover { isHovering = $0 }
+            .background(
+                GeometryReader { proxy in
+                    Color.clear.preference(key: HistoryIconFrameKey.self, value: proxy.frame(in: .named("browserRoot")))
+                }
+            )
+    }
+}
+
+private struct HistoryListView: View {
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text("History")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundColor(Color(white: 0.65))
+                .padding(.horizontal, 12)
+                .padding(.top, 10)
+                .padding(.bottom, 6)
+
+            Text("No history yet")
+                .font(.system(size: 12))
+                .foregroundColor(.secondary)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 14)
+        }
+        .padding(.bottom, 6)
+        .frame(width: 280)
+        .background(Color(white: 0.13))
+        .clipShape(RoundedRectangle(cornerRadius: 10))
+        .overlay(
+            RoundedRectangle(cornerRadius: 10)
+                .stroke(Color.white.opacity(0.08), lineWidth: 1)
+        )
+        .shadow(color: .black.opacity(0.4), radius: 16, y: 6)
     }
 }
 

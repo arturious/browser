@@ -18,8 +18,17 @@ final class BrowserViewModel: ObservableObject {
 
     private func restoreSession() {
         guard let session = SessionStore.load() else { return }
-        for url in session.urls {
-            let tab = BrowserTab(url: url)
+        for sessionTab in session.tabs {
+            guard let url = URL(string: sessionTab.url) else { continue }
+            let pinnedURL = sessionTab.pinnedURL.flatMap(URL.init(string:))
+            // A pinned tab always reopens at its frozen pinned address, not
+            // wherever it was last navigated to before quitting.
+            let tab = BrowserTab(url: sessionTab.isPinned ? (pinnedURL ?? url) : url)
+            if sessionTab.isPinned {
+                tab.isPinned = true
+                tab.pinnedURL = pinnedURL ?? url
+                tab.pinnedTitle = sessionTab.pinnedTitle
+            }
             wireUpPopupHandling(for: tab)
             wireUpPiPHandling(for: tab)
             wireUpNewTabHandling(for: tab)
@@ -31,11 +40,19 @@ final class BrowserViewModel: ObservableObject {
         }
     }
 
-    /// Saves the currently open tabs' URLs (and which one is active) so they
-    /// can be restored on the next launch.
+    /// Saves the currently open tabs (and which one is active) so they can
+    /// be restored on the next launch.
     func persistSession() {
         let activeIndex = activeTabId.flatMap { id in tabs.firstIndex { $0.id == id } }
-        SessionStore.save(urls: tabs.map { $0.url }, activeIndex: activeIndex)
+        let sessionTabs = tabs.map { tab in
+            SessionTab(
+                url: tab.url.absoluteString,
+                isPinned: tab.isPinned,
+                pinnedURL: tab.pinnedURL?.absoluteString,
+                pinnedTitle: tab.pinnedTitle
+            )
+        }
+        SessionStore.save(tabs: sessionTabs, activeIndex: activeIndex)
     }
 
     func addNewTab(url: URL = URL(string: "https://www.google.com")!, activate: Bool = true) {
@@ -93,6 +110,23 @@ final class BrowserViewModel: ObservableObject {
     func closeTab(_ tab: BrowserTab) {
         guard let index = tabs.firstIndex(where: { $0.id == tab.id }) else { return }
         PiPManager.shared.exitPiPIfShowing(tab.id, webView: tab.webView)
+
+        // A pinned tab's "close" just unloads the page instead of removing
+        // the tab — the sidebar icon (and its remembered url) stays put.
+        if tab.isPinned {
+            tab.unload()
+            if activeTabId == tab.id {
+                if let next = tabs.first(where: { $0.id != tab.id }) {
+                    selectTab(next)
+                } else {
+                    activeTabId = nil
+                    addressInput = ""
+                }
+            }
+            persistSession()
+            return
+        }
+
         tab.webView.pauseAllMediaPlayback(completionHandler: nil)
         tab.webView.stopLoading()
         tab.webView.navigationDelegate = nil
@@ -112,6 +146,27 @@ final class BrowserViewModel: ObservableObject {
     func closeTab(id: UUID) {
         guard let tab = tabs.first(where: { $0.id == id }) else { return }
         closeTab(tab)
+    }
+
+    /// Pinning moves the tab to the very front of `tabs` (rendered above
+    /// the sidebar's "+" button — see ContentView.sidebar); unpinning
+    /// leaves it wherever it already is, since there's no other ordering
+    /// to restore it to.
+    func togglePin(_ tab: BrowserTab) {
+        tab.isPinned.toggle()
+        if tab.isPinned {
+            tab.pinnedURL = tab.url
+            tab.pinnedTitle = tab.title
+            tab.pinnedFavicon = tab.faviconImage
+            if let index = tabs.firstIndex(where: { $0.id == tab.id }) {
+                tabs.move(fromOffsets: IndexSet(integer: index), toOffset: 0)
+            }
+        } else {
+            tab.pinnedURL = nil
+            tab.pinnedTitle = nil
+            tab.pinnedFavicon = nil
+        }
+        persistSession()
     }
 
     func selectTab(_ tab: BrowserTab) {
@@ -134,6 +189,7 @@ final class BrowserViewModel: ObservableObject {
     }
 
     private func activateTab(_ tab: BrowserTab) {
+        tab.reloadIfUnloaded()
         activeTabId = tab.id
         addressInput = tab.url.absoluteString
         isCreatingNewTab = false

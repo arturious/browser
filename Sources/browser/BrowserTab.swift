@@ -28,8 +28,34 @@ final class BrowserTab: Identifiable, ObservableObject {
     /// The page's declared `<meta name="theme-color">`, if any — colors the
     /// loading bar to match the site instead of a fixed accent color.
     @Published var themeColor: Color?
+    /// Shows this tab above the sidebar's "+" button instead of in the
+    /// regular scrolling tab list — see `BrowserViewModel.togglePin`.
+    @Published var isPinned: Bool = false
+    /// The `url` this tab had at the moment it was pinned — frozen there
+    /// regardless of any navigation afterward, since `reloadIfUnloaded()`
+    /// always returns a pinned tab to *this* address specifically, not
+    /// wherever it happened to be sitting right before it got unloaded.
+    /// `nil` while unpinned.
+    var pinnedURL: URL?
+    /// The page title at the same moment `pinnedURL` was captured — used
+    /// instead of just `pinnedURL.host` when snapping back on `unload()`,
+    /// since the real title (e.g. a GitHub repo page's title, not just
+    /// "github.com") is what the sidebar tooltip should actually show.
+    var pinnedTitle: String?
+    /// The favicon at the same moment `pinnedURL` was captured — restored
+    /// on `unload()` just like `pinnedTitle`, instead of re-deriving one
+    /// from `pinnedURL`'s domain (which can be a different icon than the
+    /// specific page had, e.g. a subdomain or path-specific favicon).
+    var pinnedFavicon: NSImage?
+    /// True after `unload()` — the page itself has been unloaded (frees its
+    /// memory/network resources) but the tab and its `url` are kept around,
+    /// unlike closing a regular tab. `reloadIfUnloaded()` restores it.
+    @Published var isUnloaded: Bool = false
 
-    let webView: WKWebView
+    /// Implicitly-unwrapped rather than a plain `let` so `recreateWebView()`
+    /// can replace it after a full teardown (see `unload()`) — every use
+    /// site still just sees a plain `WKWebView`.
+    private(set) var webView: WKWebView!
     private var coordinator: WebViewCoordinator?
     private var faviconHost: String?
     private var zoomHost: String?
@@ -63,6 +89,16 @@ final class BrowserTab: Identifiable, ObservableObject {
     var onOpenInNewTab: ((URL) -> Void)?
 
     convenience init(url: URL) {
+        let (config, handler, videoHandler) = Self.makeStandardConfiguration()
+        self.init(url: url, configuration: config, pipHandler: handler, videoHandler: videoHandler)
+        webView.load(URLRequest(url: url))
+        loadFavicon()
+    }
+
+    /// Builds the configuration (media/PiP/fullscreen preferences, injected
+    /// scripts, ad-block) shared by every regular (non-popup) tab — pulled
+    /// out of `init` so `recreateWebView()` can build a fresh one too.
+    private static func makeStandardConfiguration() -> (WKWebViewConfiguration, PiPExitMessageHandler, VideoPlaybackMessageHandler) {
         let config = WKWebViewConfiguration()
         // Without this, sites autoplay video/audio the moment a tab loads —
         // including tabs that were just restored from the last session or
@@ -175,9 +211,7 @@ final class BrowserTab: Identifiable, ObservableObject {
 
         AdBlockManager.shared.register(config.userContentController)
 
-        self.init(url: url, configuration: config, pipHandler: handler, videoHandler: videoHandler)
-        webView.load(URLRequest(url: url))
-        loadFavicon()
+        return (config, handler, videoHandler)
     }
 
     /// Used for popups (`target="_blank"`/`window.open()`): WebKit requires
@@ -197,7 +231,20 @@ final class BrowserTab: Identifiable, ObservableObject {
     ) {
         self.url = url
         self.title = url.host ?? "New Tab"
+        // `webView` is nil (IUO) at this point — fine, since every other
+        // stored property already has a value (defaults or the two above),
+        // which is all definite-initialization needs before `self` can be
+        // used inside setUpWebView below.
+        setUpWebView(configuration: configuration, pipHandler: pipHandler, videoHandler: videoHandler)
+    }
 
+    /// Creates and wires up a fresh `WKWebView` — the actual per-instance
+    /// setup shared by initial construction and `recreateWebView()`.
+    private func setUpWebView(
+        configuration: WKWebViewConfiguration,
+        pipHandler: PiPExitMessageHandler?,
+        videoHandler: VideoPlaybackMessageHandler?
+    ) {
         let web = SwipeAwareWebView(frame: .zero, configuration: configuration)
         web.customUserAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Safari/605.1.15"
         // Using our own swipe overlay (below) instead of WebKit's built-in
@@ -231,7 +278,12 @@ final class BrowserTab: Identifiable, ObservableObject {
         urlObservation = web.observe(\.url, options: [.new]) { [weak self] _, change in
             guard let newURL = change.newValue ?? nil else { return }
             DispatchQueue.main.async {
-                self?.url = newURL
+                // Ignore the `about:blank` navigation `unload()` itself
+                // makes — it must not clobber the real `url` a pinned tab
+                // is remembering while unloaded, which `reloadIfUnloaded()`
+                // needs to navigate back to.
+                guard let self, !self.isUnloaded else { return }
+                self.url = newURL
             }
         }
 
@@ -241,7 +293,8 @@ final class BrowserTab: Identifiable, ObservableObject {
         titleObservation = web.observe(\.title, options: [.new]) { [weak self] _, change in
             guard let newTitle = change.newValue ?? nil, !newTitle.isEmpty else { return }
             DispatchQueue.main.async {
-                self?.title = newTitle
+                guard let self, !self.isUnloaded else { return }
+                self.title = newTitle
             }
         }
 
@@ -270,6 +323,27 @@ final class BrowserTab: Identifiable, ObservableObject {
                 self?.loadingProgress = progress
             }
         }
+    }
+
+    /// Tears down the current `WKWebView` entirely (not just navigating it
+    /// away) and replaces it with a fresh one, releasing the old page's
+    /// whole renderer process rather than just the memory of whatever page
+    /// it had loaded. Used by `unload()`; the new WKWebView stays idle
+    /// (nothing loaded) until `reloadIfUnloaded()` navigates it.
+    private func recreateWebView() {
+        webView.stopLoading()
+        webView.pauseAllMediaPlayback(completionHandler: nil)
+        webView.navigationDelegate = nil
+        webView.uiDelegate = nil
+        webView.removeFromSuperview()
+        urlObservation?.invalidate()
+        titleObservation?.invalidate()
+        canGoBackObservation?.invalidate()
+        canGoForwardObservation?.invalidate()
+        estimatedProgressObservation?.invalidate()
+
+        let (configuration, pipHandler, videoHandler) = Self.makeStandardConfiguration()
+        setUpWebView(configuration: configuration, pipHandler: pipHandler, videoHandler: videoHandler)
     }
 
     /// Reads the page's declared `<meta name="theme-color">`, if any, to
@@ -358,6 +432,44 @@ final class BrowserTab: Identifiable, ObservableObject {
     func navigate(to url: URL) {
         self.url = url
         webView.load(URLRequest(url: url))
+    }
+
+    /// "Closing" a pinned tab — unlike a regular close, this keeps the tab
+    /// (and its `url`, so the sidebar icon/favicon/title stay put) but
+    /// frees the actual page's memory by navigating its WKWebView away.
+    func unload() {
+        guard !isUnloaded else { return }
+        isUnloaded = true
+        // Snap `url`/`title` (and re-derive the favicon) back to the pinned
+        // address right away, rather than leaving whatever page/title was
+        // showing right before close lingering in the sidebar tooltip until
+        // the tab is actually reselected and reloaded.
+        if let pinnedURL, pinnedURL != url {
+            url = pinnedURL
+            title = pinnedTitle ?? pinnedURL.host ?? title
+            if let pinnedFavicon {
+                faviconImage = pinnedFavicon
+                faviconHost = pinnedURL.host
+            } else if let host = pinnedURL.host {
+                // No favicon was captured at pin time — the page itself is
+                // being torn down, so `loadFavicon()` (which needs to run
+                // JS on it) isn't reliable here; fall back to the
+                // domain-only favicon service instead.
+                faviconHost = host
+                fetchFallbackFavicon(forHost: host)
+            }
+        }
+        recreateWebView()
+    }
+
+    /// Restores a tab unloaded via `unload()` by reloading its original
+    /// `url` — called when the tab is selected again.
+    func reloadIfUnloaded() {
+        guard isUnloaded else { return }
+        isUnloaded = false
+        let target = pinnedURL ?? url
+        url = target
+        webView.load(URLRequest(url: target))
     }
 
     func checkIsVideoPlaying(completion: @escaping (Bool) -> Void) {
@@ -459,8 +571,11 @@ final class WebViewCoordinator: NSObject, WKNavigationDelegate {
 
     func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
         tab?.isLoading = true
-        if let url = webView.url {
-            tab?.url = url
+        // Guarded the same way as urlObservation above — this also fires
+        // for the internal `about:blank` navigation `unload()` makes, which
+        // must not clobber the real `url` a pinned tab is remembering.
+        if let tab, !tab.isUnloaded, let url = webView.url {
+            tab.url = url
         }
     }
 
@@ -477,6 +592,7 @@ final class WebViewCoordinator: NSObject, WKNavigationDelegate {
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         guard let tab else { return }
         tab.isLoading = false
+        guard !tab.isUnloaded else { return }
         if let title = webView.title, !title.isEmpty {
             tab.title = title
         }
