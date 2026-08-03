@@ -95,8 +95,17 @@ final class UpdateChecker {
             let stagingAppURL = currentAppURL.deletingLastPathComponent()
                 .appendingPathComponent(".\(currentAppURL.lastPathComponent).update-\(UUID().uuidString)")
             try FileManager.default.copyItem(at: newAppURL, to: stagingAppURL)
+            // If anything below throws, this staged copy would otherwise be
+            // left behind in /Applications permanently — clean it up unless
+            // it was actually moved into place (the happy path clears this
+            // by moving, not copying, so there's nothing left to remove).
+            defer { try? FileManager.default.removeItem(at: stagingAppURL) }
 
-            try FileManager.default.trashItem(at: currentAppURL, resultingItemURL: nil)
+            // Deleting outright instead of trashItem — every update used to
+            // leave the previous version sitting in ~/.Trash forever, with
+            // nothing ever emptying it, so old copies just piled up there
+            // across updates.
+            try FileManager.default.removeItem(at: currentAppURL)
             try FileManager.default.moveItem(at: stagingAppURL, to: currentAppURL)
 
             progress.close()
@@ -124,6 +133,11 @@ final class UpdateChecker {
         process.arguments = ["detach", mountPoint.path, "-quiet"]
         try process.run()
         process.waitUntilExit()
+        // `hdiutil attach -mountpoint` creates this directory itself;
+        // detaching unmounts the volume but doesn't remove the now-empty
+        // directory entry, which otherwise just accumulates in the temp
+        // folder across every update.
+        try? FileManager.default.removeItem(at: mountPoint)
     }
 
     private func relaunch(at appURL: URL) {

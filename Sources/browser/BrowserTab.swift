@@ -51,6 +51,12 @@ final class BrowserTab: Identifiable, ObservableObject {
     /// memory/network resources) but the tab and its `url` are kept around,
     /// unlike closing a regular tab. `reloadIfUnloaded()` restores it.
     @Published var isUnloaded: Bool = false
+    /// Stamped whenever this tab becomes the active one (see
+    /// `BrowserViewModel.activateTab`) — while it's inactive, this is
+    /// effectively "the last time it was actually looked at", which is what
+    /// `BrowserViewModel`'s idle-suspend timer measures against to decide
+    /// whether to `unload()` it.
+    var lastAccessedAt = Date()
 
     /// Implicitly-unwrapped rather than a plain `let` so `recreateWebView()`
     /// can replace it after a full teardown (see `unload()`) — every use
@@ -88,11 +94,27 @@ final class BrowserTab: Identifiable, ObservableObject {
     /// tab" gesture, which WKWebView doesn't handle on its own.
     var onOpenInNewTab: ((URL) -> Void)?
 
-    convenience init(url: URL) {
+    /// `deferLoad: true` creates the tab (and its WKWebView/sidebar entry)
+    /// without actually navigating anywhere — used for session-restored
+    /// tabs that aren't the active one, so restoring many tabs at launch
+    /// doesn't fire off that many simultaneous page loads at once (each
+    /// spinning up its own WebContent process right away). The deferred
+    /// page loads lazily via `reloadIfUnloaded()` the first time the tab is
+    /// actually selected — the same mechanism a pinned tab already uses
+    /// after `unload()`.
+    convenience init(url: URL, deferLoad: Bool = false) {
         let (config, handler, videoHandler) = Self.makeStandardConfiguration()
         self.init(url: url, configuration: config, pipHandler: handler, videoHandler: videoHandler)
-        webView.load(URLRequest(url: url))
-        loadFavicon()
+        if deferLoad {
+            isUnloaded = true
+            if let host = url.host {
+                faviconHost = host
+                fetchFallbackFavicon(forHost: host)
+            }
+        } else {
+            webView.load(URLRequest(url: url))
+            loadFavicon()
+        }
     }
 
     /// Builds the configuration (media/PiP/fullscreen preferences, injected
@@ -128,19 +150,22 @@ final class BrowserTab: Identifiable, ObservableObject {
                 // tab" arrow doesn't touch playback at all. Either way,
                 // closing PiP shouldn't leave a video that was actually
                 // playing stuck paused — but a video the user had already
-                // paused themselves should stay paused. Track "was it
-                // playing" independently of this event's own timing (that
-                // pause can land before or after 'leavepictureinpicture'
-                // fires) so the check isn't a race.
-                let wasPlayingRecently = false;
-                setInterval(() => {
-                    const v = document.querySelector('video');
-                    if (v) wasPlayingRecently = !v.paused;
-                }, 200);
+                // paused themselves should stay paused. Tracking "was it
+                // playing" via play/pause event listeners (purely reactive,
+                // no polling loop) rather than sampling on a timer avoids
+                // any background CPU cost at all while just sitting on a
+                // page with a video, whether or not PiP is ever used.
+                let isPlaying = false;
+                document.addEventListener('play', (e) => {
+                    if (e.target.tagName === 'VIDEO') isPlaying = true;
+                }, true);
+                document.addEventListener('pause', (e) => {
+                    if (e.target.tagName === 'VIDEO') isPlaying = false;
+                }, true);
 
                 document.addEventListener('leavepictureinpicture', (event) => {
                     const video = event.target;
-                    const wasPlaying = wasPlayingRecently;
+                    const wasPlaying = isPlaying;
                     setTimeout(() => {
                         if (wasPlaying && video.paused) {
                             video.play().catch(() => {});
@@ -173,11 +198,19 @@ final class BrowserTab: Identifiable, ObservableObject {
                         lastMediaState = mediaState;
                         window.webkit.messageHandlers.videoPlaybackState.postMessage({ video: videoState, media: mediaState });
                     }
+                    // The play/pause/ended listeners below already catch
+                    // transitions instantly — this polling loop is just a
+                    // safety net for players that don't fire those reliably,
+                    // so it only needs to be tight while something is
+                    // actually playing (to catch it stopping promptly);
+                    // otherwise backing off to 4s avoids scanning the whole
+                    // DOM every second on every tab, playing or not.
+                    setTimeout(report, mediaState ? 1000 : 4000);
                 }
                 document.addEventListener('play', report, true);
                 document.addEventListener('pause', report, true);
                 document.addEventListener('ended', report, true);
-                setInterval(report, 1000);
+                setTimeout(report, 1000);
             })();
             """,
             injectionTime: .atDocumentStart,

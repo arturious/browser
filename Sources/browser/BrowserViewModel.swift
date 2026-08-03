@@ -8,8 +8,32 @@ final class BrowserViewModel: ObservableObject {
     @Published var addressBarFocusTrigger: Bool = false
     @Published var isCreatingNewTab: Bool = false
 
+    /// How long a background tab can sit untouched before it's unloaded to
+    /// free its WKWebView/renderer process — same mechanism a pinned tab
+    /// already uses when explicitly closed (`BrowserTab.unload()`), just
+    /// triggered by idle time instead of an explicit close. Tabs playing
+    /// audio/video, and the active tab, are always exempt.
+    private let idleSuspendTimeout: TimeInterval = 20 * 60
+    private var idleSuspendTimer: Timer?
+
     init() {
         restoreSession()
+        idleSuspendTimer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in
+            Task { @MainActor in self?.suspendIdleTabs() }
+        }
+    }
+
+    private func suspendIdleTabs() {
+        let now = Date()
+        for tab in tabs {
+            guard tab.id != activeTabId,
+                  !tab.isUnloaded,
+                  !tab.hasPlayingVideo,
+                  !tab.isPlayingMedia,
+                  now.timeIntervalSince(tab.lastAccessedAt) > idleSuspendTimeout
+            else { continue }
+            tab.unload()
+        }
     }
 
     var activeTab: BrowserTab? {
@@ -18,12 +42,21 @@ final class BrowserViewModel: ObservableObject {
 
     private func restoreSession() {
         guard let session = SessionStore.load() else { return }
-        for sessionTab in session.tabs {
+        // Known up front so only the tab that's about to become active
+        // loads for real below — every other restored tab defers its load
+        // until actually selected, instead of every tab from the last
+        // session firing off its own page load (and WebContent process)
+        // simultaneously at launch.
+        let activeIndex = session.activeIndex.flatMap { session.tabs.indices.contains($0) ? $0 : nil } ?? 0
+        for (index, sessionTab) in session.tabs.enumerated() {
             guard let url = URL(string: sessionTab.url) else { continue }
             let pinnedURL = sessionTab.pinnedURL.flatMap(URL.init(string:))
             // A pinned tab always reopens at its frozen pinned address, not
             // wherever it was last navigated to before quitting.
-            let tab = BrowserTab(url: sessionTab.isPinned ? (pinnedURL ?? url) : url)
+            let tab = BrowserTab(
+                url: sessionTab.isPinned ? (pinnedURL ?? url) : url,
+                deferLoad: index != activeIndex
+            )
             if sessionTab.isPinned {
                 tab.isPinned = true
                 tab.pinnedURL = pinnedURL ?? url
@@ -34,7 +67,6 @@ final class BrowserViewModel: ObservableObject {
             wireUpNewTabHandling(for: tab)
             tabs.append(tab)
         }
-        let activeIndex = session.activeIndex.flatMap { tabs.indices.contains($0) ? $0 : nil } ?? 0
         if tabs.indices.contains(activeIndex) {
             activateTab(tabs[activeIndex])
         }
@@ -190,6 +222,7 @@ final class BrowserViewModel: ObservableObject {
 
     private func activateTab(_ tab: BrowserTab) {
         tab.reloadIfUnloaded()
+        tab.lastAccessedAt = Date()
         activeTabId = tab.id
         addressInput = tab.url.absoluteString
         isCreatingNewTab = false
