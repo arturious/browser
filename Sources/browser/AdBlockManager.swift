@@ -59,6 +59,18 @@ final class AdBlockManager: ObservableObject {
         }
     }
 
+    /// Stops tracking a tab's content controller once its `WKWebView` is
+    /// torn down (tab closed, or unloaded/recreated) — without this,
+    /// `registeredControllers` would grow forever across a long session's
+    /// worth of tab opens/closes, each entry keeping a since-torn-down
+    /// `WKWebView`'s controller (and everything it references) alive.
+    func unregister(_ controller: WKUserContentController) {
+        registeredControllers.removeAll { $0 === controller }
+        if let currentRuleList {
+            controller.remove(currentRuleList)
+        }
+    }
+
     private func applyEnabledState() {
         guard let currentRuleList else { return }
         for controller in registeredControllers {

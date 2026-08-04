@@ -2,6 +2,15 @@ import SwiftUI
 import AppKit
 
 extension Color {
+    /// The main topbar/sidebar icon color, shared across toolbar buttons,
+    /// the sidebar "+" button, and the history/downloads icons.
+    static let toolbarIcon = Color(red: 0xAC / 255, green: 0xAC / 255, blue: 0xAC / 255)
+    /// A slightly lighter variant used for icons that sit directly in the
+    /// address bar (new-tab indicator, link-copy, PiP toggle).
+    static let toolbarIconLight = Color(red: 0xB2 / 255, green: 0xB2 / 255, blue: 0xB2 / 255)
+    /// The sidebar's "playing audio" speaker-badge icon color.
+    static let mediaBadgeIcon = Color(red: 0xC5 / 255, green: 0xC5 / 255, blue: 0xC5 / 255)
+
     /// True for colors close to plain white/light-gray — e.g. YouTube
     /// declares `rgba(255,255,255,0.98)` as its theme-color (matching its
     /// own light toolbar). Real browsers don't apply theme-color verbatim

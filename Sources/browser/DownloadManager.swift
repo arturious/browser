@@ -66,20 +66,24 @@ final class DownloadManager: NSObject, WKDownloadDelegate, ObservableObject {
     }
 
     func downloadDidFinish(_ download: WKDownload) {
-        guard let itemId = downloadItemIds[ObjectIdentifier(download)],
+        let key = ObjectIdentifier(download)
+        guard let itemId = downloadItemIds[key],
               let index = downloads.firstIndex(where: { $0.id == itemId }) else { return }
         downloads[index].isFinished = true
         downloads[index].progress = 1
         progressObservations[itemId] = nil
+        downloadItemIds[key] = nil
         hasUnseenFinishedDownloads = true
     }
 
     func download(_ download: WKDownload, didFailWithError error: Error, resumeData: Data?) {
-        guard let itemId = downloadItemIds[ObjectIdentifier(download)],
+        let key = ObjectIdentifier(download)
+        guard let itemId = downloadItemIds[key],
               let index = downloads.firstIndex(where: { $0.id == itemId }) else { return }
         downloads[index].failed = true
         downloads[index].isFinished = true
         progressObservations[itemId] = nil
+        downloadItemIds[key] = nil
     }
 
     func revealInFinder(_ item: DownloadItem) {
@@ -90,10 +94,6 @@ final class DownloadManager: NSObject, WKDownloadDelegate, ObservableObject {
     func openFile(_ item: DownloadItem) {
         guard let url = item.destinationURL else { return }
         NSWorkspace.shared.open(url)
-    }
-
-    func clearFinished() {
-        downloads.removeAll { $0.isFinished }
     }
 
     private static func uniqueDestination(in directory: URL, filename: String) -> URL {

@@ -72,6 +72,14 @@ final class BrowserTab: Identifiable, ObservableObject {
     private var estimatedProgressObservation: NSKeyValueObservation?
     private var pipMessageHandler: PiPExitMessageHandler?
     private var videoPlaybackMessageHandler: VideoPlaybackMessageHandler?
+    /// True once this tab's current `webView.configuration.userContentController`
+    /// was registered with `AdBlockManager` by *this* tab (via
+    /// `makeStandardConfiguration()`) — false for a popup tab, which is
+    /// handed the SAME configuration/controller its opener already
+    /// registered (WebKit requires reusing it). Guards `unregister()` calls
+    /// so closing/unloading a popup never strips ad-block registration out
+    /// from under its still-open opener, which shares that same controller.
+    private(set) var ownsRegisteredController = false
 
     /// Fired when the page's video leaves Picture-in-Picture for any reason
     /// (including the system PiP window's "return to tab" button), so the
@@ -278,6 +286,12 @@ final class BrowserTab: Identifiable, ObservableObject {
         pipHandler: PiPExitMessageHandler?,
         videoHandler: VideoPlaybackMessageHandler?
     ) {
+        // Only the standard (non-popup) configuration path passes real
+        // handlers here (see makeStandardConfiguration/its two callers) —
+        // a popup's `nil, nil` means it's reusing its opener's already-
+        // registered configuration, not a fresh one this tab owns.
+        ownsRegisteredController = pipHandler != nil
+
         let web = SwipeAwareWebView(frame: .zero, configuration: configuration)
         web.customUserAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Safari/605.1.15"
         // Using our own swipe overlay (below) instead of WebKit's built-in
@@ -369,6 +383,9 @@ final class BrowserTab: Identifiable, ObservableObject {
         webView.navigationDelegate = nil
         webView.uiDelegate = nil
         webView.removeFromSuperview()
+        if ownsRegisteredController {
+            AdBlockManager.shared.unregister(webView.configuration.userContentController)
+        }
         urlObservation?.invalidate()
         titleObservation?.invalidate()
         canGoBackObservation?.invalidate()
@@ -505,13 +522,6 @@ final class BrowserTab: Identifiable, ObservableObject {
         webView.load(URLRequest(url: target))
     }
 
-    func checkIsVideoPlaying(completion: @escaping (Bool) -> Void) {
-        let script = "(() => { const v = document.querySelector('video'); return !!(v && !v.paused && !v.ended); })();"
-        webView.evaluateJavaScript(script) { result, _ in
-            completion((result as? Bool) ?? false)
-        }
-    }
-
     func goBack() { webView.goBack() }
     func goForward() { webView.goForward() }
     func reload() { webView.reload() }
@@ -543,7 +553,7 @@ final class BrowserTab: Identifiable, ObservableObject {
     /// Applies whatever zoom level was last saved for this host (or the
     /// default if none), called whenever a navigation lands on a new host —
     /// so a site you've zoomed once stays zoomed on future visits.
-    fileprivate func applyStoredZoom(for host: String?) {
+    func applyStoredZoom(for host: String?) {
         guard host != zoomHost else { return }
         zoomHost = host
         let stored = host.flatMap { ZoomStore.zoom(for: $0) } ?? 1.0
@@ -560,161 +570,5 @@ final class BrowserTab: Identifiable, ObservableObject {
         let hash = host.unicodeScalars.reduce(0) { $0 &+ Int($1.value) }
         let hue = Double(hash % 360) / 360.0
         return Color(hue: hue, saturation: 0.55, brightness: 0.85)
-    }
-}
-
-@MainActor
-private final class PiPExitMessageHandler: NSObject, WKScriptMessageHandler {
-    weak var tab: BrowserTab?
-
-    func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
-        guard let tab else { return }
-        PiPManager.shared.clearPiPState(for: tab.id)
-        tab.onPiPExited?()
-    }
-}
-
-@MainActor
-private final class VideoPlaybackMessageHandler: NSObject, WKScriptMessageHandler {
-    weak var tab: BrowserTab?
-
-    func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
-        guard let body = message.body as? [String: Bool] else { return }
-        tab?.hasPlayingVideo = body["video"] ?? false
-        tab?.isPlayingMedia = body["media"] ?? false
-    }
-}
-
-@MainActor
-final class WebViewCoordinator: NSObject, WKNavigationDelegate {
-    weak var tab: BrowserTab?
-
-    /// WebKit deliberately cancels the underlying frame load once a
-    /// navigation is converted into a download, which is reported to us as
-    /// `didFail(Provisional)Navigation` with `WebKitErrorDomain` code 102
-    /// ("Frame load interrupted") — an expected side effect, not a real
-    /// failure. This flag (set the moment we return `.download`) lets us
-    /// recognize and swallow exactly that error instead of treating it as a
-    /// broken navigation.
-    private var isDownloadNavigation = false
-
-    init(tab: BrowserTab) {
-        self.tab = tab
-    }
-
-    func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
-        tab?.isLoading = true
-        // Guarded the same way as urlObservation above — this also fires
-        // for the internal `about:blank` navigation `unload()` makes, which
-        // must not clobber the real `url` a pinned tab is remembering.
-        if let tab, !tab.isUnloaded, let url = webView.url {
-            tab.url = url
-        }
-    }
-
-    // Applying the stored zoom here (rather than at didStartProvisionalNavigation)
-    // matters: at that point the new page hasn't replaced the old page's
-    // content yet, so setting pageZoom visibly snaps the *previous* page to
-    // the new site's zoom level for a moment. didCommit fires once the new
-    // page has actually started rendering, so the zoom change lands on the
-    // right content.
-    func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
-        tab?.applyStoredZoom(for: webView.url?.host)
-    }
-
-    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
-        guard let tab else { return }
-        tab.isLoading = false
-        guard !tab.isUnloaded else { return }
-        if let title = webView.title, !title.isEmpty {
-            tab.title = title
-        }
-        if let url = webView.url {
-            tab.url = url
-        }
-        tab.loadFavicon()
-        tab.loadThemeColor()
-    }
-
-    func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
-        tab?.isLoading = false
-        guard !isDownloadNavigation else {
-            isDownloadNavigation = false
-            return
-        }
-    }
-
-    func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
-        tab?.isLoading = false
-        guard !isDownloadNavigation else {
-            isDownloadNavigation = false
-            return
-        }
-    }
-
-    func webView(
-        _ webView: WKWebView,
-        decidePolicyFor navigationAction: WKNavigationAction,
-        preferences: WKWebpagePreferences
-    ) async -> (WKNavigationActionPolicy, WKWebpagePreferences) {
-        // Some downloads (e.g. `<a download>` links) are flagged as
-        // downloads at the ACTION stage, before any network response even
-        // exists — catching only navigationResponse misses these entirely.
-        if navigationAction.shouldPerformDownload {
-            isDownloadNavigation = true
-            return (.download, preferences)
-        }
-
-        // Cmd+clicking a link is the standard "open in new tab" gesture —
-        // WKWebView doesn't handle this itself, so intercept it here rather
-        // than letting it navigate the current tab.
-        if navigationAction.navigationType == .linkActivated,
-           navigationAction.modifierFlags.contains(.command),
-           let url = navigationAction.request.url {
-            tab?.onOpenInNewTab?(url)
-            return (.cancel, preferences)
-        }
-
-        return (.allow, preferences)
-    }
-
-    func webView(
-        _ webView: WKWebView,
-        decidePolicyFor navigationResponse: WKNavigationResponse
-    ) async -> WKNavigationResponsePolicy {
-        let isAttachment = (navigationResponse.response as? HTTPURLResponse)?
-            .value(forHTTPHeaderField: "Content-Disposition")?
-            .lowercased()
-            .hasPrefix("attachment") ?? false
-
-        if navigationResponse.canShowMIMEType && !isAttachment {
-            return .allow
-        } else {
-            isDownloadNavigation = true
-            return .download
-        }
-    }
-
-    func webView(_ webView: WKWebView, navigationResponse: WKNavigationResponse, didBecome download: WKDownload) {
-        isDownloadNavigation = false
-        tab?.isLoading = false
-        DownloadManager.shared.beginTracking(download)
-    }
-
-    func webView(_ webView: WKWebView, navigationAction: WKNavigationAction, didBecome download: WKDownload) {
-        isDownloadNavigation = false
-        tab?.isLoading = false
-        DownloadManager.shared.beginTracking(download)
-    }
-}
-
-extension WebViewCoordinator: WKUIDelegate {
-    func webView(
-        _ webView: WKWebView,
-        createWebViewWith configuration: WKWebViewConfiguration,
-        for navigationAction: WKNavigationAction,
-        windowFeatures: WKWindowFeatures
-    ) -> WKWebView? {
-        tab?.onCreatePopup?(configuration, navigationAction)
     }
 }

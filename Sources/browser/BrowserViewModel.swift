@@ -163,6 +163,9 @@ final class BrowserViewModel: ObservableObject {
         tab.webView.stopLoading()
         tab.webView.navigationDelegate = nil
         tab.webView.removeFromSuperview()
+        if tab.ownsRegisteredController {
+            AdBlockManager.shared.unregister(tab.webView.configuration.userContentController)
+        }
         tabs.remove(at: index)
         if activeTabId == tab.id {
             if tabs.isEmpty {
