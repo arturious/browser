@@ -18,9 +18,16 @@ final class BrowserViewModel: ObservableObject {
 
     init() {
         restoreSession()
-        idleSuspendTimer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in
+        let timer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.suspendIdleTabs() }
         }
+        // A ±10s tolerance lets the OS coalesce this timer's wakeups with
+        // other nearby scheduled work instead of waking the app on its own
+        // precise 60s cadence — this check isn't time-critical (idle
+        // suspension is measured in tens of minutes), so there's no reason
+        // to insist on exact timing.
+        timer.tolerance = 10
+        idleSuspendTimer = timer
     }
 
     private func suspendIdleTabs() {

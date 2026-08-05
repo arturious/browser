@@ -2,11 +2,18 @@ import SwiftUI
 import WebKit
 
 struct WebViewContainer: NSViewRepresentable {
-    let webView: WKWebView
+    @ObservedObject var tab: BrowserTab
+    /// Whether this is the currently-selected tab.
+    let isActive: Bool
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator()
+    }
 
     func makeNSView(context: Context) -> NSView {
         let container = NSView()
-        mount(webView, in: container)
+        mount(tab.webView, in: container)
+        applyActiveState(context: context)
         return container
     }
 
@@ -17,10 +24,16 @@ struct WebViewContainer: NSViewRepresentable {
     // A plain `WKWebView` return type has no hook to replace itself later,
     // so this wraps it in a container view whose subview gets swapped out
     // here whenever the `webView` this struct holds is a different
-    // instance than what's currently mounted.
+    // instance than what's currently mounted. `@ObservedObject var tab`
+    // also means this runs on every change to the tab's own published
+    // state (not just isActive toggling), which is what lets a background
+    // tab's video ending get noticed and suspended below without needing
+    // to wait for a tab switch.
     func updateNSView(_ container: NSView, context: Context) {
-        guard container.subviews.first !== webView else { return }
-        mount(webView, in: container)
+        if container.subviews.first !== tab.webView {
+            mount(tab.webView, in: container)
+        }
+        applyActiveState(context: context)
     }
 
     private func mount(_ webView: WKWebView, in container: NSView) {
@@ -28,5 +41,27 @@ struct WebViewContainer: NSViewRepresentable {
         webView.frame = container.bounds
         webView.autoresizingMask = [.width, .height]
         container.addSubview(webView)
+    }
+
+    /// Hides every non-active tab's `WKWebView` (rather than merely
+    /// `opacity(0)`-ing it) and explicitly suspends its media/rendering via
+    /// the public `setAllMediaPlaybackSuspended` API — window-level
+    /// `NSWindow.occlusionState` can't distinguish between tabs sharing the
+    /// same window, so WebKit's own background-tab throttling never
+    /// otherwise engages for a backgrounded tab in a single-window,
+    /// multi-tab app like this one. Left exempt while `isPlayingMedia` is
+    /// true so a background music/video tab keeps playing — the same
+    /// exemption `BrowserViewModel`'s idle-unload timer already makes —
+    /// rather than silently muting audio the user backgrounded on purpose.
+    private func applyActiveState(context: Context) {
+        tab.webView.isHidden = !isActive
+        let shouldSuspend = !isActive && !tab.isPlayingMedia
+        guard context.coordinator.lastSuspendedState != shouldSuspend else { return }
+        context.coordinator.lastSuspendedState = shouldSuspend
+        tab.webView.setAllMediaPlaybackSuspended(shouldSuspend, completionHandler: nil)
+    }
+
+    final class Coordinator {
+        var lastSuspendedState: Bool?
     }
 }

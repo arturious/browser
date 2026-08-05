@@ -58,6 +58,18 @@ editMenu.addItem(NSMenuItem(title: "Paste", action: #selector(NSText.paste(_:)),
 editMenu.addItem(NSMenuItem(title: "Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a"))
 editMenuItem.submenu = editMenu
 
+// Without this, there's no way to enter native fullscreen at all: no
+// visible zoom/green-traffic-light button (hidden — see App.swift) and no
+// menu item wires up Cmd+Ctrl+F on its own for a hand-built main menu like
+// this one.
+let viewMenuItem = NSMenuItem()
+mainMenu.addItem(viewMenuItem)
+let viewMenu = NSMenu(title: "View")
+let fullScreenItem = NSMenuItem(title: "Enter Full Screen", action: #selector(NSWindow.toggleFullScreen(_:)), keyEquivalent: "f")
+fullScreenItem.keyEquivalentModifierMask = [.command, .control]
+viewMenu.addItem(fullScreenItem)
+viewMenuItem.submenu = viewMenu
+
 app.mainMenu = mainMenu
 
 app.run()

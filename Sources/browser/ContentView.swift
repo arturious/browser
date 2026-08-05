@@ -43,9 +43,7 @@ struct ContentView: View {
                         // window forward — a fully detached background tab
                         // has no window, so that button silently does nothing.
                         ForEach(viewModel.tabs) { tab in
-                            WebViewContainer(webView: tab.webView)
-                                .opacity(tab.id == viewModel.activeTabId ? 1 : 0)
-                                .allowsHitTesting(tab.id == viewModel.activeTabId)
+                            WebViewContainer(tab: tab, isActive: tab.id == viewModel.activeTabId)
                         }
                         if let tab = viewModel.activeTab {
                             SwipeNavigationOverlay(tab: tab)

@@ -10,7 +10,14 @@ struct PageLoadingBar: View {
     @State private var isLongLoad = false
     @State private var isPulsing = false
     @State private var shimmerOffset: CGFloat = -1
+    /// True once a load has been stuck in `isLongLoad` for an unusually
+    /// long time (a hung/never-finishing navigation, not a normal slow
+    /// page) — freezes the shimmer to a static bar instead of letting its
+    /// `repeatForever` animation drive Core Animation at full frame rate
+    /// indefinitely for however long the tab happens to sit there loading.
+    @State private var isStalled = false
     @State private var longLoadTask: Task<Void, Never>?
+    @State private var stallTask: Task<Void, Never>?
 
     private let pillWidth: CGFloat = 70
     private let longLoadWidth: CGFloat = 140
@@ -20,7 +27,7 @@ struct PageLoadingBar: View {
         Capsule()
             .fill(tab.themeColor ?? Color(white: 0.6))
             .overlay {
-                if isLongLoad {
+                if isLongLoad && !isStalled {
                     GeometryReader { proxy in
                         Capsule()
                             .fill(Color.white.opacity(0.35))
@@ -44,6 +51,8 @@ struct PageLoadingBar: View {
             .allowsHitTesting(false)
             .onChange(of: tab.isLoading) { _, loading in
                 longLoadTask?.cancel()
+                stallTask?.cancel()
+                isStalled = false
                 if loading {
                     isLongLoad = false
                     isPulsing = false
@@ -64,6 +73,13 @@ struct PageLoadingBar: View {
         shimmerOffset = -1
         withAnimation(.linear(duration: 1).repeatForever(autoreverses: false)) {
             shimmerOffset = 1
+        }
+        stallTask = Task {
+            try? await Task.sleep(nanoseconds: 30_000_000_000)
+            guard !Task.isCancelled, tab.isLoading else { return }
+            withAnimation(.easeOut(duration: 0.3)) {
+                isStalled = true
+            }
         }
     }
 }

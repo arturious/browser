@@ -30,6 +30,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         self.window = window
         window.identifier = Self.mainWindowIdentifier
         window.title = "Browser"
+        // Without this, `toggleFullScreen(_:)` (Cmd+Ctrl+F / the View menu
+        // item below) silently does nothing — a manually created NSWindow
+        // isn't fullscreen-eligible by default the way Xcode's template
+        // main menu's window is.
+        window.collectionBehavior.insert(.fullScreenPrimary)
         window.titlebarAppearsTransparent = true
         window.titleVisibility = .hidden
         window.tabbingMode = .disallowed
