@@ -60,25 +60,29 @@ app.on('before-quit', () => {
 
 app.on('window-all-closed', () => app.quit());
 
-function showSettings(): void {
+function showSettings(view: 'settings' | 'theme' = 'settings'): void {
   if (settingsWindow && !settingsWindow.isDestroyed()) {
+    settingsWindow.setSize(view === 'theme' ? 360 : 780, view === 'theme' ? 300 : 560);
     settingsWindow.show();
     settingsWindow.focus();
+    void settingsWindow.loadFile(RENDERER_HTML, { query: { view } });
     return;
   }
   settingsWindow = new BrowserWindow({
-    width: 360,
-    height: 120,
+    width: view === 'theme' ? 360 : 780,
+    height: view === 'theme' ? 300 : 560,
     resizable: false,
     minimizable: false,
     maximizable: false,
     fullscreenable: false,
     title: 'Settings',
+    titleBarStyle: 'hiddenInset',
+    trafficLightPosition: { x: 16, y: 14 },
     backgroundColor: '#1e1e1e',
     webPreferences: chromeWebPreferences(),
   });
   browser?.addRenderer(settingsWindow.webContents);
-  void settingsWindow.loadFile(RENDERER_HTML, { query: { view: 'settings' } });
+  void settingsWindow.loadFile(RENDERER_HTML, { query: { view } });
 }
 
 function registerIPC(browser: Browser): void {
@@ -112,6 +116,7 @@ function registerIPC(browser: Browser): void {
   on('page:focus', () => browser.activeTab?.webContents?.focus());
   on('ui:page-bounds', (rect: Rect) => browser.setPageBounds(rect));
   on('ui:topbar-menu', () => browser.showTopBarMenu());
+  on('ui:theme-editor', () => showSettings('theme'));
   on('ui:sidebar-peek', (open: boolean) => browser.setSidebarPeek(Boolean(open)));
   on('appearance:set', (patch: Partial<Appearance>) => browser.setAppearance(patch));
   on('tab:new', () => browser.command('new-tab'));
@@ -148,7 +153,7 @@ function buildMenu(): Menu {
         { role: 'about', label: 'About Browser' },
         { type: 'separator' },
         { label: 'Check for Updates…', click: () => void checkForUpdates(true) },
-        { label: 'Settings…', accelerator: 'CmdOrCtrl+,', click: showSettings },
+        { label: 'Settings…', accelerator: 'CmdOrCtrl+,', click: () => showSettings() },
         { type: 'separator' },
         { role: 'hide', label: 'Hide Browser' },
         { role: 'hideOthers' },

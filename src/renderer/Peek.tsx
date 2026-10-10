@@ -28,8 +28,13 @@ export function Peek() {
 
   return (
     <div
-      className={`peek ${open ? 'open' : ''}`}
-      style={{ '--sidebar-width': `${state.appearance.sidebarWidth}px` } as CSSProperties}
+      className={`peek ${open ? 'open' : ''} ${state.appearance.themeStyle === 'solid' ? 'solid-theme' : ''}`}
+      style={
+        {
+          '--sidebar-width': `${state.appearance.sidebarWidth}px`,
+          '--solid-color': state.appearance.solidColor,
+        } as CSSProperties
+      }
       onMouseEnter={() => {
         hovered.current = true;
         clearTimeout(leaveTimer.current);

@@ -30,6 +30,7 @@ const api: BrowserAPI = {
   copyText: (text) => send('copy', text),
   togglePiP: () => send('pip:toggle'),
   focusPage: () => send('page:focus'),
+  openThemeEditor: () => send('ui:theme-editor'),
 
   setPageBounds: (rect) => send('ui:page-bounds', rect),
   showTopBarMenu: () => send('ui:topbar-menu'),

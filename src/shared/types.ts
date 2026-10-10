@@ -45,6 +45,10 @@ export interface Appearance {
   sidebarWidth: number;
   /** The sidebar is hidden and slides out over the page from the window's left edge. */
   compactMode: boolean;
+  /** The chrome visual style selected in the theme editor. */
+  themeStyle: 'gradient' | 'solid';
+  /** Opaque color used by the solid chrome style. */
+  solidColor: string;
 }
 
 /** The expanded sidebar can be dragged between `minExpanded` and `maxExpanded`. */
@@ -73,7 +77,7 @@ export interface SymbolImage {
 }
 
 /** One-shot commands main sends to the chrome renderer. */
-export type ChromeCommand = 'new-tab' | 'focus-address';
+export type ChromeCommand = 'new-tab' | 'focus-address' | 'theme-editor';
 
 export interface BrowserAPI {
   getState(): AppState;
@@ -99,6 +103,7 @@ export interface BrowserAPI {
   setPageBounds(rect: Rect): void;
   /** Right-click on the top bar: the appearance menu. */
   showTopBarMenu(): void;
+  openThemeEditor(): void;
   setAppearance(patch: Partial<Appearance>): void;
   setSidebarPeek(open: boolean): void;
 

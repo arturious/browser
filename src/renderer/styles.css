@@ -108,6 +108,18 @@ body {
   overflow: hidden;
 }
 
+.frame.solid-theme {
+  inset: 0;
+  border: 1px solid #1F1F1F;
+  border-radius: 16px;
+  background: var(--solid-color);
+  box-shadow: 0 14px 32px rgba(0, 0, 0, 0.35);
+}
+
+.frame.solid-theme.bordered {
+  inset: 8px;
+}
+
 .frame.bordered {
   inset: 8px;
   border-radius: 10px;
@@ -118,6 +130,21 @@ body {
 .fullscreen.frame.bordered {
   inset: 0;
   border-radius: 0;
+}
+
+.fullscreen.frame.solid-theme {
+  inset: 0;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+.solid-theme .topbar {
+  background: var(--solid-color);
+}
+
+.solid-theme .page {
+  background: var(--solid-color);
 }
 
 .topbar {
@@ -326,7 +353,7 @@ body {
   flex: none;
   width: 56px;
   overflow: hidden;
-  transition: width 0.2s ease-in-out;
+  transition: width 0.32s cubic-bezier(0.25, 0.8, 0.25, 1);
 }
 
 .sidebar-expanded .sidebar-slot {
@@ -532,7 +559,7 @@ body {
   margin: 0 8px 8px 0;
   border-radius: 8px;
   background: black;
-  transition: margin 0.2s ease-in-out;
+  transition: margin 0.32s cubic-bezier(0.25, 0.8, 0.25, 1);
 }
 
 .compact .page {
@@ -579,6 +606,13 @@ body {
   transition: transform 0.15s ease;
 }
 
+.peek.solid-theme {
+  background: var(--solid-color);
+  border: 1px solid #1F1F1F;
+  border-radius: 12px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+}
+
 .peek.open {
   transform: none;
   transition: transform 0.25s cubic-bezier(0.25, 1.2, 0.45, 1);
@@ -594,17 +628,250 @@ body {
   background: #1e1e1e;
 }
 
-.settings {
-  padding: 24px;
+.settings-window {
+  min-height: 100vh;
+  color: #f2f2f2;
+  background: #1e1e1e;
 }
 
-.settings-row {
+.settings-tabs {
+  display: flex;
+  align-items: stretch;
+  justify-content: center;
+  gap: 4px;
+  min-height: 104px;
+  padding: 42px 20px 8px;
+  box-sizing: border-box;
+  background: #292929;
+  box-shadow: inset 0 -1px 0 rgba(255, 255, 255, 0.04);
+}
+
+.settings-tab {
+  width: 92px;
+  height: 54px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  color: #a7a7a7;
+  background: transparent;
+  font: 12px -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif;
+  cursor: pointer;
+}
+
+.settings-tab:hover {
+  color: #d5d5d5;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.settings-tab.active {
+  border-color: rgba(255, 255, 255, 0.16);
+  color: #f2f2f2;
+  background: #3a3a3a;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.24);
+}
+
+.settings-tab-icon {
+  font-size: 21px;
+  line-height: 1;
+}
+
+.settings-content {
+  max-width: 660px;
+  margin: 0 auto;
+  padding: 18px 24px 40px;
+}
+
+.settings-page-title {
+  margin: 0 0 12px 2px;
+  color: #f0f0f0;
+  font-size: 20px;
+  font-weight: 600;
+}
+
+.settings-card {
+  overflow: hidden;
+  margin-bottom: 14px;
+  border: 1px solid #3a3a3a;
+  border-radius: 9px;
+  background: #242424;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.18);
+}
+
+.settings-card h2 {
+  margin: 0;
+  padding: 12px 14px;
+  border-bottom: 1px solid #3a3a3a;
+  color: #dedede;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.settings-toggle,
+.settings-control {
+  min-height: 48px;
+  box-sizing: border-box;
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 12px;
+  padding: 0 14px;
+  border-bottom: 1px solid #383838;
 }
 
-.settings-row input {
-  margin: 0;
-  accent-color: var(--accent);
+.settings-toggle:last-child,
+.settings-control:last-child {
+  border-bottom: 0;
+}
+
+.settings-toggle > span:first-child,
+.settings-control > span:first-child {
+  flex: 1;
+}
+
+.settings-toggle input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.settings-switch {
+  position: relative;
+  width: 40px;
+  height: 22px;
+  flex: none;
+  border-radius: 999px;
+  background: #5b5b5b;
+  transition: background 0.15s ease;
+}
+
+.settings-switch::after {
+  content: '';
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #d6d6d6;
+  transition: transform 0.15s ease;
+}
+
+.settings-toggle input:checked + .settings-switch {
+  background: #4c9da6;
+}
+
+.settings-toggle input:checked + .settings-switch::after {
+  transform: translateX(18px);
+}
+
+.settings-control {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px 14px;
+}
+
+.settings-control input[type='range'] {
+  grid-column: 1 / -1;
+  width: 100%;
+  accent-color: #66aeb7;
+}
+
+.settings-control output {
+  color: #999;
+}
+
+.settings-control select {
+  min-width: 150px;
+  padding: 6px 8px;
+  border: 1px solid #505050;
+  border-radius: 6px;
+  color: #d0d0d0;
+  background: #353535;
+}
+
+/* MARK: Theme editor */
+
+[data-view="theme"] body {
+  background: #1e1e1e;
+}
+
+.theme-editor {
+  box-sizing: border-box;
+  min-height: 100vh;
+  padding: 20px;
+  color: white;
+}
+
+.theme-editor-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.theme-editor-header h1 {
+  margin: 0 0 20px;
+  font-size: 18px;
+}
+
+.theme-editor-header button {
+  width: 26px;
+  height: 26px;
+  margin-top: -20px;
+  border: 0;
+  border-radius: 50%;
+  color: white;
+  background: transparent;
+  font-size: 20px;
+  cursor: pointer;
+}
+
+.theme-style-choice,
+.solid-theme-panel label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.theme-style-choice select {
+  min-width: 180px;
+  padding: 7px 9px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 6px;
+  color: white;
+  background: #303030;
+}
+
+.solid-theme-panel,
+.gradient-theme-panel {
+  margin-top: 22px;
+}
+
+.solid-theme-preview,
+.gradient-theme-preview {
+  height: 90px;
+  margin-bottom: 18px;
+  border-radius: 10px;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.14);
+}
+
+.gradient-theme-preview {
+  background: linear-gradient(135deg, rgba(37, 37, 37, 0.85), rgba(10, 132, 255, 0.42));
+}
+
+.solid-theme-panel input[type='color'] {
+  width: 42px;
+  height: 30px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
+.solid-theme-panel p,
+.gradient-theme-panel p {
+  color: rgba(255, 255, 255, 0.62);
+  line-height: 1.45;
 }

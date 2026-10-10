@@ -8,7 +8,7 @@ import { api, rectOf, useAppState } from './state';
 /** The window's own interface: top bar, sidebar, and the hole the page shows through. */
 export function Chrome() {
   const state = useAppState();
-  const { sidebarExpanded, compactMode, showBorder } = state.appearance;
+  const { sidebarExpanded, compactMode, showBorder, themeStyle, solidColor } = state.appearance;
   // While dragging the sidebar's edge, the width lives here; it's saved on release.
   const [draggedWidth, setDraggedWidth] = useState<number | null>(null);
   const sidebarWidth = draggedWidth ?? state.appearance.sidebarWidth;
@@ -35,7 +35,7 @@ export function Chrome() {
   useEffect(() => {
     const element = pageRef.current;
     if (!element) return;
-    const until = performance.now() + 250;
+    const until = performance.now() + 380;
     let frame = 0;
     const step = () => {
       api.setPageBounds(rectOf(element));
@@ -61,9 +61,10 @@ export function Chrome() {
           compactMode ? 'compact' : '',
           state.ui.isWindowFullscreen ? 'fullscreen' : '',
           showBorder ? 'bordered' : '',
+          themeStyle === 'solid' ? 'solid-theme' : '',
           draggedWidth !== null ? 'resizing' : '',
         ].join(' ')}
-        style={{ '--sidebar-width': `${sidebarWidth}px` } as CSSProperties}
+        style={{ '--sidebar-width': `${sidebarWidth}px`, '--solid-color': solidColor } as CSSProperties}
       >
         <div
           className="topbar"

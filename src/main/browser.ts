@@ -432,8 +432,15 @@ export class Browser implements TabHost {
   // MARK: Appearance
 
   get appearance(): Appearance {
-    const { showBorder, sidebarExpanded, sidebarWidth, compactMode } = settingsStore.get();
-    return { showBorder, sidebarExpanded, sidebarWidth: clampSidebarWidth(sidebarWidth), compactMode };
+    const { showBorder, sidebarExpanded, sidebarWidth, compactMode, themeStyle, solidColor } = settingsStore.get();
+    return {
+      showBorder,
+      sidebarExpanded,
+      sidebarWidth: clampSidebarWidth(sidebarWidth),
+      compactMode,
+      themeStyle: themeStyle === 'solid' ? 'solid' : 'gradient',
+      solidColor: /^#[0-9a-f]{6}$/i.test(solidColor) ? solidColor : '#000000',
+    };
   }
 
   setAppearance(patch: Partial<Appearance>): void {
@@ -443,6 +450,10 @@ export class Browser implements TabHost {
     }
     if (typeof patch.sidebarWidth === 'number' && Number.isFinite(patch.sidebarWidth)) {
       next.sidebarWidth = clampSidebarWidth(patch.sidebarWidth);
+    }
+    if (patch.themeStyle === 'gradient' || patch.themeStyle === 'solid') next.themeStyle = patch.themeStyle;
+    if (typeof patch.solidColor === 'string' && /^#[0-9a-f]{6}$/i.test(patch.solidColor)) {
+      next.solidColor = patch.solidColor;
     }
     settingsStore.set({ ...settingsStore.get(), ...next });
     if (!next.compactMode) this.setSidebarPeek(false);
@@ -487,7 +498,7 @@ export class Browser implements TabHost {
   }
 
   showTopBarMenu(): void {
-    const { showBorder, sidebarExpanded, compactMode } = this.appearance;
+    const { showBorder, sidebarExpanded, compactMode, themeStyle } = this.appearance;
     Menu.buildFromTemplate([
       {
         label: 'Expand Sidebar',
@@ -503,6 +514,22 @@ export class Browser implements TabHost {
         click: () => this.setAppearance({ compactMode: !compactMode }),
       },
       { type: 'separator' },
+      {
+        label: 'Edit Theme…',
+        click: () => this.win.webContents.send('command', 'theme-editor'),
+      },
+      {
+        label: 'Solid Color',
+        type: 'radio',
+        checked: themeStyle === 'solid',
+        click: () => this.setAppearance({ themeStyle: 'solid' }),
+      },
+      {
+        label: 'Glass Gradient',
+        type: 'radio',
+        checked: themeStyle === 'gradient',
+        click: () => this.setAppearance({ themeStyle: 'gradient' }),
+      },
       {
         label: 'Show Border',
         type: 'checkbox',

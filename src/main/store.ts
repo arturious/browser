@@ -66,6 +66,8 @@ export const settingsStore = new JsonStore<{ adBlockEnabled: boolean } & Appeara
   sidebarExpanded: false,
   sidebarWidth: 240,
   compactMode: false,
+  themeStyle: 'gradient',
+  solidColor: '#000000',
 });
 
 /** The window's size and position (outside fullscreen), so it reopens the same way. */

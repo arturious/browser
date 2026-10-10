@@ -202,6 +202,8 @@ export function AddressBar({ activeTab }: AddressBarProps) {
       } else if (command === 'focus-address' && activeTabRef.current) {
         setInput(activeTabRef.current.url);
         setEditing(true);
+      } else if (command === 'theme-editor') {
+        api.openThemeEditor();
       }
     });
     return unsubscribe;
