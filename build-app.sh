@@ -6,7 +6,7 @@ export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer
 swift build
 
 APP_NAME="Browser.app"
-BUILD_DIR=".build/arm64-apple-macosx/debug"
+BUILD_DIR="$(swift build --show-bin-path)"
 APP_DIR=".build/${APP_NAME}"
 
 rm -rf "$APP_DIR"
