@@ -1,30 +1,32 @@
-import { useEffect, useRef, useState } from 'react';
+import { useRef, useState } from 'react';
 import type { TabState } from '../../shared/types';
 import { hostOf } from '../../shared/url';
-import { api, rectOf } from '../state';
+import { api } from '../state';
 import { Icon } from './Icon';
 
 interface SidebarProps {
   tabs: TabState[];
   activeTabId: string | null;
-  onNewTab: () => void;
+  /** Rows with titles, rather than icons only. */
+  expanded: boolean;
 }
 
 /** Pinned tabs on top, then "+", then everyday tabs, newest first. */
-export function Sidebar({ tabs, activeTabId, onNewTab }: SidebarProps) {
+export function Sidebar({ tabs, activeTabId, expanded }: SidebarProps) {
   const pinned = tabs.filter((tab) => tab.isPinned);
   const everyday = tabs.filter((tab) => !tab.isPinned);
   return (
-    <div className="sidebar">
+    <div className={`sidebar ${expanded ? 'expanded' : ''}`}>
       {pinned.map((tab) => (
-        <SidebarIcon key={tab.id} tab={tab} isActive={tab.id === activeTabId} className="pinned-item" />
+        <SidebarTab key={tab.id} tab={tab} isActive={tab.id === activeTabId} className="pinned-item" />
       ))}
-      <div className="sidebar-add" onClick={onNewTab}>
+      <div className="sidebar-add" onClick={api.newTab}>
         <Icon name="plus" size={14} bold />
+        <span className="tab-title">New Tab</span>
       </div>
       <div className="sidebar-scroll">
         {everyday.map((tab) => (
-          <SidebarIcon key={tab.id} tab={tab} isActive={tab.id === activeTabId} />
+          <SidebarTab key={tab.id} tab={tab} isActive={tab.id === activeTabId} />
         ))}
       </div>
     </div>
@@ -33,31 +35,12 @@ export function Sidebar({ tabs, activeTabId, onNewTab }: SidebarProps) {
 
 const FAST_DOUBLE_CLICK = 200;
 
-function SidebarIcon({ tab, isActive, className = '' }: { tab: TabState; isActive: boolean; className?: string }) {
-  const ref = useRef<HTMLDivElement>(null);
+function SidebarTab({ tab, isActive, className = '' }: { tab: TabState; isActive: boolean; className?: string }) {
   const lastClick = useRef(0);
-  const [hovering, setHovering] = useState(false);
-
-  // Keeps the tooltip's text current while it shows (titles change as pages load).
-  useEffect(() => {
-    if (!hovering || !ref.current) return;
-    api.setHoveredTab({ title: tab.title, isPlayingMedia: tab.isPlayingMedia, rect: rectOf(ref.current) });
-  }, [hovering, tab.title, tab.isPlayingMedia]);
-
-  // A row removed while hovered never gets its mouseleave.
-  useEffect(() => () => {
-    if (hovering) api.setHoveredTab(null);
-  }, [hovering]);
-
   return (
     <div
-      ref={ref}
-      className={`sidebar-icon ${isActive ? 'active' : ''} ${className}`}
-      onMouseEnter={() => setHovering(true)}
-      onMouseLeave={() => {
-        setHovering(false);
-        api.setHoveredTab(null);
-      }}
+      className={`sidebar-tab ${isActive ? 'active' : ''} ${className}`}
+      title={tab.isPlayingMedia ? `${tab.title}\nPlaying audio` : tab.title}
       onMouseDown={(e) => {
         if (e.button !== 0) return;
         // A quick double click closes the tab; a single one selects it.
@@ -83,11 +66,12 @@ function SidebarIcon({ tab, isActive, className = '' }: { tab: TabState; isActiv
           </div>
         )}
       </div>
+      <span className="tab-title">{tab.title}</span>
       {tab.isPinned ? (
         <Icon name="pin" size={12} className="pin-badge" />
       ) : (
         <div
-          className={`tab-close ${hovering ? 'visible' : ''}`}
+          className="tab-close"
           onMouseDown={(e) => {
             e.stopPropagation();
             api.closeTab(tab.id);

@@ -81,10 +81,6 @@ body {
   animation: wiggle 0.3s ease-in-out infinite;
 }
 
-.wiggle-once {
-  animation: wiggle 0.25s ease-in-out 2;
-}
-
 @keyframes wiggle {
   0%,
   100% {
@@ -100,16 +96,26 @@ body {
 
 /* MARK: Window frame */
 
-/* Inset from the window edge, so a thin margin of plain (untinted) blur
-   shows around the tinted frame. */
+/* Fills the window, with its 16px corners. With the border on, it's inset
+   8px so a margin of plain (untinted) background shows around it. */
 .frame {
   position: fixed;
-  inset: 8px;
+  inset: 0;
   display: flex;
   flex-direction: column;
-  border-radius: 10px;
+  border-radius: 16px;
   background: rgba(0, 0, 0, 0.45);
   overflow: hidden;
+}
+
+.frame.bordered {
+  inset: 8px;
+  border-radius: 10px;
+}
+
+.fullscreen.frame.bordered {
+  inset: 0;
+  border-radius: 0;
 }
 
 .topbar {
@@ -118,7 +124,6 @@ body {
   height: 34px;
   display: flex;
   align-items: center;
-  justify-content: space-between;
   -webkit-app-region: drag;
 }
 
@@ -127,13 +132,63 @@ body {
   align-items: center;
 }
 
-.toolbar-group.left {
+/* MARK: Window buttons */
+
+/* macOS's own size: 14px circles, 23px apart. */
+.window-buttons {
+  display: flex;
+  gap: 9px;
   padding-left: 12px;
+  -webkit-app-region: no-drag;
 }
 
-.toolbar-group.right {
-  padding-right: 12px;
-  gap: 4px;
+.window-button {
+  width: 14px;
+  height: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.18);
+  color: rgba(0, 0, 0, 0.6);
+}
+
+.window-button .icon {
+  opacity: 0;
+}
+
+.window-buttons:hover .window-button.close {
+  background: #ff5f57;
+}
+
+.window-buttons:hover .window-button.minimize {
+  background: #febc2e;
+}
+
+.window-buttons:hover .window-button.zoom {
+  background: #28c840;
+}
+
+.window-buttons:hover .icon {
+  opacity: 1;
+}
+
+.window-button:active {
+  filter: brightness(0.8);
+}
+
+/* In fullscreen there are no window buttons, so the toolbar starts at the edge. */
+.fullscreen .window-buttons {
+  display: none;
+}
+
+/* 4px after the window buttons. */
+.toolbar-group.left {
+  padding-left: 4px;
+}
+
+.fullscreen .toolbar-group.left {
+  padding-left: 12px;
 }
 
 .toolbar-button {
@@ -292,59 +347,6 @@ body {
   }
 }
 
-/* MARK: Downloads button */
-
-.downloads-button {
-  display: grid;
-  place-items: center;
-}
-
-.downloads-button .swap {
-  grid-area: 1 / 1;
-  transition:
-    opacity 0.35s cubic-bezier(0.34, 1.56, 0.64, 1),
-    transform 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
-}
-
-.downloads-button .swap.out {
-  opacity: 0;
-  transform: scale(0.4);
-}
-
-.progress-pie path {
-  transition: d 0.2s ease-in-out;
-}
-
-.unseen-dot {
-  position: absolute;
-  top: 4px;
-  right: 4px;
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: #ff3b30;
-  opacity: 0;
-  transform: scale(0);
-  transition:
-    opacity 0.2s ease-in-out,
-    transform 0.2s ease-in-out;
-}
-
-.unseen-dot.visible {
-  opacity: 1;
-  transform: scale(1);
-}
-
-.fly-dot {
-  position: fixed;
-  width: 12px;
-  height: 12px;
-  border-radius: 50%;
-  background: var(--accent);
-  pointer-events: none;
-  z-index: 10;
-}
-
 /* MARK: Sidebar and page */
 
 .main {
@@ -353,14 +355,21 @@ body {
   display: flex;
 }
 
+/* Icons only (56px), or icons with titles (240px) when expanded; nothing in
+   compact mode, where the sidebar slides out over the page instead. The
+   sidebar itself keeps its width, so the slot reveals it as it grows. */
 .sidebar-slot {
   flex: none;
   width: 56px;
   overflow: hidden;
-  transition: width 0.12s ease-in-out;
+  transition: width 0.2s ease-in-out;
 }
 
-.sidebar-hidden .sidebar-slot {
+.sidebar-expanded .sidebar-slot {
+  width: 240px;
+}
+
+.compact .sidebar-slot {
   width: 0;
 }
 
@@ -371,18 +380,22 @@ body {
   flex-direction: column;
   align-items: center;
   gap: 4px;
-  transition: transform 0.12s ease-in-out;
 }
 
-.sidebar-hidden .sidebar {
-  transform: translateX(-56px);
+.sidebar.expanded {
+  width: 240px;
+  align-items: stretch;
+  padding: 0 8px;
+  box-sizing: border-box;
 }
 
 .pinned-item {
   margin-top: 8px;
 }
 
-.sidebar-add {
+.sidebar-add,
+.sidebar-tab {
+  position: relative;
   flex: none;
   width: 48px;
   height: 36px;
@@ -390,18 +403,54 @@ body {
   align-items: center;
   justify-content: center;
   border-radius: 8px;
-  color: var(--toolbar-icon);
   transition: background 0.15s ease-out;
 }
 
-.sidebar-add:hover {
+.sidebar-add {
+  color: var(--toolbar-icon);
+}
+
+.sidebar-add:hover,
+.sidebar-tab:hover {
   background: rgba(255, 255, 255, 0.1);
+}
+
+.sidebar-tab.active {
+  background: rgba(255, 255, 255, 0.15);
+}
+
+.tab-title {
+  display: none;
+}
+
+/* Expanded: full-width rows, icon then title. */
+.sidebar.expanded .sidebar-add,
+.sidebar.expanded .sidebar-tab {
+  width: auto;
+  justify-content: flex-start;
+  gap: 10px;
+  padding: 0 10px;
+}
+
+.sidebar.expanded .tab-title {
+  display: block;
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sidebar.expanded .sidebar-add .tab-title {
+  color: var(--toolbar-icon);
 }
 
 .sidebar-scroll {
   min-height: 0;
   display: flex;
   flex-direction: column;
+  align-items: inherit;
   gap: 4px;
   overflow-y: auto;
   padding-top: 4px;
@@ -412,28 +461,9 @@ body {
   display: none;
 }
 
-.sidebar-icon {
-  position: relative;
-  flex: none;
-  width: 48px;
-  height: 36px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 8px;
-  transition: background 0.15s ease-out;
-}
-
-.sidebar-icon:hover {
-  background: rgba(255, 255, 255, 0.1);
-}
-
-.sidebar-icon.active {
-  background: rgba(255, 255, 255, 0.15);
-}
-
 .favicon-wrap {
   position: relative;
+  flex: none;
   width: 16px;
   height: 16px;
 }
@@ -486,15 +516,28 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
+  border-radius: 4px;
   color: #bfbfbf;
   opacity: 0;
   pointer-events: none;
   transition: opacity 0.15s ease-out;
 }
 
-.tab-close.visible {
+.sidebar-tab:hover .tab-close {
   opacity: 1;
   pointer-events: auto;
+}
+
+/* Expanded: the close button sits at the end of the row. */
+.sidebar.expanded .tab-close {
+  position: static;
+  flex: none;
+  width: 20px;
+  height: 20px;
+}
+
+.sidebar.expanded .tab-close:hover {
+  background: rgba(255, 255, 255, 0.12);
 }
 
 /* The hole the active tab's WebContentsView is placed over. */
@@ -503,129 +546,60 @@ body {
   margin: 0 8px 8px 0;
   border-radius: 8px;
   background: black;
-  transition: margin 0.12s ease-in-out;
+  transition: margin 0.2s ease-in-out;
 }
 
-.sidebar-hidden .page {
+.compact .page {
   margin-left: 8px;
 }
 
-/* MARK: Overlay */
+/* MARK: Compact mode */
 
-.overlay-backdrop {
+/* The strip along the window's left edge, beside the page, that brings the
+   sidebar out. */
+.sidebar-edge {
   position: fixed;
-  inset: 0;
+  left: 0;
+  top: 34px;
+  bottom: 0;
+  width: 8px;
+  z-index: 10;
 }
 
-.popover {
-  position: absolute;
-  width: 280px;
-  padding-bottom: 6px;
-  border-radius: 10px;
-  background: rgb(33, 33, 33);
-  box-shadow:
-    0 0 0 1px rgba(255, 255, 255, 0.08) inset,
-    0 6px 32px rgba(0, 0, 0, 0.4);
-  transform-origin: top right;
-  animation: pop-in 0.15s ease-out;
-  overflow: hidden;
+.sidebar-edge.bordered {
+  top: 42px;
+  width: 16px;
 }
 
-@keyframes pop-in {
-  from {
-    opacity: 0;
-    transform: scale(0.96);
-  }
+[data-view='sidebar'] body {
+  background: transparent;
 }
 
-.popover-title {
-  padding: 10px 12px 6px;
-  font-size: 12px;
-  font-weight: 600;
-  color: #a6a6a6;
-}
-
-.popover-empty {
-  padding: 14px 12px;
-  font-size: 12px;
-  color: rgba(235, 235, 245, 0.6);
-}
-
-.divider {
-  height: 1px;
-  background: rgba(255, 255, 255, 0.08);
-}
-
-.download-row {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  padding: 8px 12px;
-}
-
-.download-row:hover {
-  background: rgba(255, 255, 255, 0.06);
-}
-
-.download-line {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
-}
-
-.download-name {
-  font-size: 12px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.download-status.failed {
-  color: #ff453a;
-}
-
-.download-status.finished {
-  color: #32d74b;
-}
-
-.download-status.active {
-  color: #ccc;
-}
-
-.progress-track {
-  height: 4px;
-  border-radius: 2px;
-  background: rgba(255, 255, 255, 0.15);
-  overflow: hidden;
-}
-
-.progress-fill {
-  height: 100%;
-  border-radius: 2px;
-  background: var(--accent);
-  transition: width 0.2s ease-out;
-}
-
-.tab-tooltip {
+/* The sidebar out over the page, with Zen's spring: a slight overshoot as it
+   lands, and a quicker slide back. */
+.peek {
   position: absolute;
   top: 0;
+  bottom: 0;
   left: 0;
-  max-width: 340px;
-  padding: 3px 8px;
-  background: rgb(31, 31, 31);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
-  font: 10px Verdana, sans-serif;
+  width: fit-content;
+  padding-top: 8px;
+  border-radius: 8px;
+  background: rgba(28, 28, 28, 0.97);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.06),
+    0 8px 24px rgba(0, 0, 0, 0.45);
+  transform: translateX(calc(-100% - 24px));
+  transition: transform 0.15s ease;
 }
 
-.tooltip-line {
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+.peek.open {
+  transform: none;
+  transition: transform 0.25s cubic-bezier(0.25, 1.25, 0.45, 1);
 }
 
-.tooltip-line.secondary {
-  color: #a6a6a6;
+.peek .pinned-item:first-child {
+  margin-top: 0;
 }
 
 /* MARK: Settings */

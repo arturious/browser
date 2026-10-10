@@ -28,7 +28,6 @@ export function showPageContextMenu(tab: Tab, params: ContextMenuParams, actions
   if (params.mediaType === 'image' && params.srcURL) {
     section(
       { label: 'Open Image in New Tab', click: () => actions.openTab(params.srcURL, true) },
-      { label: 'Save Image', click: () => wc.downloadURL(params.srcURL) },
       { label: 'Copy Image', click: () => wc.copyImageAt(params.x, params.y) },
     );
   }

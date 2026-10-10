@@ -1,14 +1,11 @@
-import { useLayoutEffect, useRef, useState, type CSSProperties } from 'react';
+import { useLayoutEffect, useRef, useState } from 'react';
 import {
   AppWindow,
   ArrowLeft,
+  Maximize2,
+  Minus,
   ArrowRight,
   Check,
-  CircleArrowDown,
-  CircleCheck,
-  CircleX,
-  History,
-  Inbox,
   Link,
   PanelLeft,
   PictureInPicture2,
@@ -35,11 +32,8 @@ const FALLBACKS: Record<string, LucideIcon> = {
   link: Link,
   checkmark: Check,
   macwindow: AppWindow,
-  tray: Inbox,
-  'clock.arrow.trianglehead.counterclockwise.rotate.90': History,
-  'xmark.circle': CircleX,
-  'checkmark.circle': CircleCheck,
-  'arrow.down.circle': CircleArrowDown,
+  minus: Minus,
+  'arrow.up.left.and.arrow.down.right': Maximize2,
 };
 
 interface IconProps {
@@ -48,11 +42,10 @@ interface IconProps {
   size: number;
   bold?: boolean;
   className?: string;
-  style?: CSSProperties;
 }
 
 /** An SF Symbol, tinted with the current text color. */
-export function Icon({ name, size, bold, className = '', style }: IconProps) {
+export function Icon({ name, size, bold, className = '' }: IconProps) {
   const symbol = api.symbols[`${name}:${bold ? 'bold' : 'regular'}`];
   if (!symbol) {
     const Fallback = FALLBACKS[name] ?? X;
@@ -61,7 +54,6 @@ export function Icon({ name, size, bold, className = '', style }: IconProps) {
         className={`icon ${className}`}
         size={size * 1.1}
         strokeWidth={bold ? 2.4 : 1.8}
-        style={style}
       />
     );
   }
@@ -74,7 +66,6 @@ export function Icon({ name, size, bold, className = '', style }: IconProps) {
         width: symbol.width * scale,
         height: symbol.height * scale,
         WebkitMaskImage: `url(${symbol.url})`,
-        ...style,
       }}
     />
   );

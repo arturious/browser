@@ -4,19 +4,20 @@ import {
   clipboard,
   Menu,
   nativeImage,
+  screen,
   WebContentsView,
   type BrowserWindowConstructorOptions,
   type ContextMenuParams,
   type WebContents,
   type WebPreferences,
 } from 'electron';
-import type { AppState, ChromeCommand, HoveredTab, Popover, Rect, UIState } from '../shared/types';
+import { SIDEBAR_WIDTH, type Appearance, type AppState, type ChromeCommand, type Rect, type UIState } from '../shared/types';
 import { resolveInput } from '../shared/url';
 import type { AdBlocker } from './adblock';
 import { showPageContextMenu } from './context-menu';
-import type { Downloads } from './downloads';
+import { applyGlass } from './glass';
 import { CHROME_PRELOAD, RENDERER_HTML } from './paths';
-import { sessionStore } from './store';
+import { sessionStore, settingsStore, windowStore } from './store';
 import { Tab, type TabHost } from './tab';
 
 /** A background tab untouched this long is unloaded to free its renderer. */
@@ -31,23 +32,41 @@ export function chromeWebPreferences(): WebPreferences {
     sandbox: true,
     contextIsolation: true,
     nodeIntegration: false,
+    // Keeps drawing while the window is minimized, so it's all there the
+    // moment the window comes back.
+    backgroundThrottling: false,
   };
+}
+
+/**
+ * The last window size and position, unless it's no longer on any screen
+ * (say, a monitor was unplugged).
+ */
+function savedWindowBounds() {
+  const { bounds } = windowStore.get();
+  if (!bounds) return null;
+  const visible = screen.getAllDisplays().some(({ workArea: area }) =>
+    bounds.x < area.x + area.width && bounds.x + bounds.width > area.x &&
+    bounds.y < area.y + area.height && bounds.y + bounds.height > area.y,
+  );
+  return visible ? bounds : null;
 }
 
 /**
  * The one browser window: the chrome (React, filling the window), one
  * WebContentsView per tab placed where the chrome leaves room for the page,
- * and a transparent overlay view on top for popovers and tooltips, which
- * have to float over the page.
+ * and, in compact mode, a transparent view on top for the sidebar sliding
+ * out over the page.
  */
 export class Browser implements TabHost {
   readonly win: BrowserWindow;
-  private readonly overlay: WebContentsView;
+  private readonly peekView: WebContentsView;
+  private peekHideTimer: NodeJS.Timeout | null = null;
   private readonly extraRenderers = new Set<WebContents>();
 
   tabs: Tab[] = [];
   activeTabId: string | null = null;
-  private ui: UIState = { popover: null, popoverAnchor: null, hoveredTab: null, isHtmlFullscreen: false };
+  private ui: UIState = { sidebarPeek: false, isHtmlFullscreen: false, isWindowFullscreen: false };
   private pageBounds: Rect = { x: 64, y: 42, width: 1028, height: 700 };
   private pipTabId: string | null = null;
   private fullscreenForHtml = false;
@@ -55,43 +74,52 @@ export class Browser implements TabHost {
   private closing = false;
   private readonly idleTimer: NodeJS.Timeout;
 
-  constructor(
-    private readonly downloads: Downloads,
-    private readonly adBlocker: AdBlocker,
-  ) {
+  constructor(private readonly adBlocker: AdBlocker) {
+    const saved = savedWindowBounds();
     this.win = new BrowserWindow({
-      width: 1100,
-      height: 750,
+      ...(saved ?? { width: 1100, height: 750, center: true }),
       minWidth: 900,
       minHeight: 600,
-      center: true,
       show: false,
       title: 'Browser',
       // Keeps a real titled window (native edge resizing) with the title
-      // bar and traffic lights hidden; the top bar is the drag area.
+      // bar and traffic lights hidden; the top bar is the drag area and
+      // draws its own window buttons — gray until hovered, like an
+      // inactive window's, which the native ones can't be made to do.
       titleBarStyle: 'hidden',
-      vibrancy: 'hud',
-      visualEffectState: 'active',
+      // See-through, with Liquid Glass put behind the content by
+      // applyGlass below.
+      transparent: true,
       backgroundColor: '#00000000',
+      // In dark mode macOS draws a light hairline around every window as
+      // part of its shadow; it can't be recolored, only dropped with it.
+      hasShadow: false,
       webPreferences: chromeWebPreferences(),
     });
     this.win.setWindowButtonVisibility(false);
+    applyGlass(this.win);
     void this.win.loadFile(RENDERER_HTML, { query: { view: 'chrome' } });
     this.win.once('ready-to-show', () => this.win.show());
 
-    this.overlay = new WebContentsView({ webPreferences: chromeWebPreferences() });
-    this.overlay.setBackgroundColor('#00000000');
-    this.overlay.setVisible(false);
-    void this.overlay.webContents.loadFile(RENDERER_HTML, { query: { view: 'overlay' } });
-    this.win.contentView.addChildView(this.overlay);
+    this.peekView = new WebContentsView({ webPreferences: chromeWebPreferences() });
+    this.peekView.setBackgroundColor('#00000000');
+    this.peekView.setVisible(false);
+    void this.peekView.webContents.loadFile(RENDERER_HTML, { query: { view: 'sidebar' } });
+    this.win.contentView.addChildView(this.peekView);
 
-    this.win.on('resize', () => this.layout());
+
+    this.win.on('resize', () => {
+      this.layout();
+      this.saveWindowBounds();
+    });
+    this.win.on('move', () => this.saveWindowBounds());
     this.win.on('close', () => {
       this.closing = true;
     });
-    // Window-level fullscreen changes the content size too.
-    this.win.on('enter-full-screen', () => this.layout());
-    this.win.on('leave-full-screen', () => this.layout());
+    // Fullscreen hides the traffic lights (the toolbar moves back left) and
+    // changes the content size.
+    this.win.on('enter-full-screen', () => this.setUI({ isWindowFullscreen: true }));
+    this.win.on('leave-full-screen', () => this.setUI({ isWindowFullscreen: false }));
 
     this.restoreSession();
     // Not time-critical (idle is measured in tens of minutes), so a coarse
@@ -104,9 +132,9 @@ export class Browser implements TabHost {
     return this.tabs.find((tab) => tab.id === this.activeTabId);
   }
 
-  /** Renderers allowed to drive the browser over IPC: the chrome, the overlay, settings. */
+  /** Renderers allowed to drive the browser over IPC: the chrome, the compact sidebar, settings. */
   isTrustedSender(sender: WebContents): boolean {
-    return sender === this.win.webContents || sender === this.overlay.webContents || this.extraRenderers.has(sender);
+    return sender === this.win.webContents || sender === this.peekView.webContents || this.extraRenderers.has(sender);
   }
 
   addRenderer(wc: WebContents): void {
@@ -124,9 +152,8 @@ export class Browser implements TabHost {
     return {
       tabs: this.tabs.map((tab) => tab.state()),
       activeTabId: this.activeTabId,
-      downloads: this.downloads.list(),
-      hasUnseenFinishedDownloads: this.downloads.hasUnseenFinished,
       adBlockEnabled: this.adBlocker.enabled,
+      appearance: this.appearance,
       ui: this.ui,
     };
   }
@@ -138,7 +165,7 @@ export class Browser implements TabHost {
     setImmediate(() => {
       this.broadcastScheduled = false;
       const state = this.snapshot();
-      for (const wc of [this.win.webContents, this.overlay.webContents, ...this.extraRenderers]) {
+      for (const wc of [this.win.webContents, this.peekView.webContents, ...this.extraRenderers]) {
         if (!wc.isDestroyed()) wc.send('state', state);
       }
       this.layout();
@@ -148,13 +175,18 @@ export class Browser implements TabHost {
   }
 
   command(command: ChromeCommand): void {
-    if (command !== 'download-started') this.win.webContents.focus();
+    this.win.webContents.focus();
     this.win.webContents.send('command', command);
   }
 
   private setUI(patch: Partial<UIState>): void {
     this.ui = { ...this.ui, ...patch };
     this.changed();
+  }
+
+  private saveWindowBounds(): void {
+    // Normal bounds: what the window returns to when it leaves fullscreen.
+    if (!this.win.isDestroyed()) windowStore.set({ bounds: this.win.getNormalBounds() });
   }
 
   // MARK: Layout
@@ -180,25 +212,23 @@ export class Browser implements TabHost {
       tab.view.setBorderRadius(fullscreen ? 0 : 8);
     }
 
-    // The overlay only covers what it has to: the whole window while a
-    // popover is open (a click outside closes it), or just the tooltip.
-    const { popover, hoveredTab, isHtmlFullscreen } = this.ui;
-    if (popover) {
-      this.overlay.setBounds(full);
-      this.overlay.setVisible(true);
-    } else if (hoveredTab && !isHtmlFullscreen) {
-      const { x, y, width: w } = hoveredTab.rect;
-      this.overlay.setBounds({ x: Math.round(x + w + 2), y: Math.round(y + 27), width: 360, height: 40 });
-      this.overlay.setVisible(true);
-    } else {
-      this.overlay.setVisible(false);
+    // Compact mode's sidebar floats over the page's left edge, in line with
+    // it; the view leaves room on the right for the panel's shadow.
+    const { sidebarExpanded, compactMode } = this.appearance;
+    if (compactMode && this.ui.sidebarPeek && !this.ui.isHtmlFullscreen) {
+      const width = sidebarExpanded ? SIDEBAR_WIDTH.expanded : SIDEBAR_WIDTH.collapsed;
+      this.peekView.setBounds({ x: this.pageBounds.x, y: this.pageBounds.y, width: width + 24, height: this.pageBounds.height });
+      this.peekView.setVisible(true);
+    } else if (!compactMode || this.ui.isHtmlFullscreen) {
+      this.peekView.setVisible(false);
     }
+
   }
 
   attach(_tab: Tab, view: WebContentsView): void {
     this.win.contentView.addChildView(view);
-    // Re-adding moves the overlay back above the new page.
-    this.win.contentView.addChildView(this.overlay);
+    // Re-adding moves the compact sidebar back above the new page.
+    this.win.contentView.addChildView(this.peekView);
     this.layout();
   }
 
@@ -207,7 +237,15 @@ export class Browser implements TabHost {
   }
 
   private updateVisibility(): void {
-    for (const tab of this.tabs) tab.view?.setVisible(tab.id === this.activeTabId);
+    for (const tab of this.tabs) {
+      const active = tab.id === this.activeTabId;
+      tab.view?.setVisible(active);
+      // Chromium stops rendering a page once its window is minimized, and
+      // after restoring, video and animations stay blank for a moment until
+      // it catches up. The active tab keeps rendering; background tabs are
+      // still throttled.
+      tab.webContents?.setBackgroundThrottling(!active);
+    }
   }
 
   // MARK: Session
@@ -264,15 +302,6 @@ export class Browser implements TabHost {
     this.tabs.splice(index >= 0 ? index : 0, 0, tab);
     this.selectTab(tab);
     return tab.view!.webContents;
-  }
-
-  /** A link that opened a blank tab only to start a download leaves nothing to look at. */
-  downloadStarted(source: WebContents): void {
-    this.command('download-started');
-    const tab = this.tabFor(source);
-    if (tab && !tab.isPinned && !tab.canGoBack && (!source.getURL() || source.getURL() === 'about:blank')) {
-      this.closeTab(tab);
-    }
   }
 
   closeTab(tab: Tab): void {
@@ -373,10 +402,12 @@ export class Browser implements TabHost {
   }
 
   showTabMenu(tab: Tab): void {
-    const pinIcon = nativeImage.createFromNamedImage('pin').resize({ height: 15 });
-    pinIcon.setTemplateImage(true);
     Menu.buildFromTemplate([
-      { label: tab.isPinned ? 'Unpin' : 'Pin', icon: pinIcon, click: () => this.togglePin(tab) },
+      {
+        label: tab.isPinned ? 'Unpin' : 'Pin',
+        icon: nativeImage.createMenuSymbol('pin'),
+        click: () => this.togglePin(tab),
+      },
       { label: 'Close Tab', click: () => this.closeTab(tab) },
     ]).popup({ window: this.win });
   }
@@ -385,27 +416,74 @@ export class Browser implements TabHost {
     showPageContextMenu(tab, params, { openTab: (url, background) => this.openTab(url, background) });
   }
 
-  showDownloadMenu(id: string): void {
-    const item = this.downloads.find(id);
-    if (!item?.isFinished || item.failed) return;
-    Menu.buildFromTemplate([{ label: 'Show in Finder', click: () => this.downloads.reveal(id) }]).popup({
-      window: this.win,
-    });
-  }
-
   copyText(text: string): void {
     clipboard.writeText(text);
   }
 
-  // MARK: Popovers and tooltips
+  // MARK: Appearance
 
-  setPopover(popover: Popover | null, anchor?: Rect): void {
-    if (popover === 'downloads') this.downloads.markSeen();
-    this.setUI({ popover, popoverAnchor: popover ? (anchor ?? null) : null });
+  get appearance(): Appearance {
+    const { showBorder, sidebarExpanded, compactMode } = settingsStore.get();
+    return { showBorder, sidebarExpanded, compactMode };
   }
 
-  setHoveredTab(hoveredTab: HoveredTab | null): void {
-    this.setUI({ hoveredTab });
+  setAppearance(patch: Partial<Appearance>): void {
+    const next = { ...this.appearance };
+    for (const key of ['showBorder', 'sidebarExpanded', 'compactMode'] as const) {
+      if (typeof patch[key] === 'boolean') next[key] = patch[key];
+    }
+    settingsStore.set({ ...settingsStore.get(), ...next });
+    if (!next.compactMode) this.setSidebarPeek(false);
+    // Keep the View menu's checkmarks in step.
+    const menu = Menu.getApplicationMenu();
+    const expand = menu?.getMenuItemById('expand-sidebar');
+    const compact = menu?.getMenuItemById('compact-mode');
+    if (expand) expand.checked = next.sidebarExpanded;
+    if (compact) compact.checked = next.compactMode;
+    this.changed();
+  }
+
+  /**
+   * Compact mode's sidebar sliding out (or back). It stays mounted a moment
+   * after closing, while it slides away.
+   */
+  setSidebarPeek(open: boolean): void {
+    if (this.peekHideTimer) clearTimeout(this.peekHideTimer);
+    this.peekHideTimer = null;
+    if (open && !this.appearance.compactMode) return;
+    if (open === this.ui.sidebarPeek) return;
+    this.setUI({ sidebarPeek: open });
+    if (!open) {
+      this.peekHideTimer = setTimeout(() => {
+        if (!this.ui.sidebarPeek) this.peekView.setVisible(false);
+      }, 260);
+    }
+  }
+
+  showTopBarMenu(): void {
+    const { showBorder, sidebarExpanded, compactMode } = this.appearance;
+    Menu.buildFromTemplate([
+      {
+        label: 'Expand Sidebar',
+        type: 'checkbox',
+        checked: sidebarExpanded,
+        click: () => this.setAppearance({ sidebarExpanded: !sidebarExpanded }),
+      },
+      {
+        label: 'Compact Mode',
+        type: 'checkbox',
+        accelerator: 'Ctrl+Alt+C',
+        checked: compactMode,
+        click: () => this.setAppearance({ compactMode: !compactMode }),
+      },
+      { type: 'separator' },
+      {
+        label: 'Show Border',
+        type: 'checkbox',
+        checked: showBorder,
+        click: () => this.setAppearance({ showBorder: !showBorder }),
+      },
+    ]).popup({ window: this.win });
   }
 
   // MARK: Fullscreen
@@ -473,6 +551,18 @@ export class Browser implements TabHost {
     app.focus({ steal: true });
     this.win.show();
     this.selectTab(tab);
+  }
+
+  // MARK: Window buttons
+
+  /** The green button: fullscreen, or with Option, zoom (fill the screen without going fullscreen). */
+  zoomWindow(fill: boolean): void {
+    if (fill) {
+      if (this.win.isMaximized()) this.win.unmaximize();
+      else this.win.maximize();
+    } else {
+      this.win.setFullScreen(!this.win.isFullScreen());
+    }
   }
 
   // MARK: Teardown

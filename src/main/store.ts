@@ -1,6 +1,7 @@
 import { app } from 'electron';
 import fs from 'node:fs';
 import path from 'node:path';
+import type { Appearance } from '../shared/types';
 
 /**
  * A small JSON file in the app's userData folder, read once and written back
@@ -59,10 +60,22 @@ export const sessionStore = new JsonStore<{ tabs: SessionTab[]; activeIndex: num
 /** Per-site zoom levels, keyed by host, so a site you've zoomed stays zoomed. */
 export const zoomStore = new JsonStore<Record<string, number>>('zoom', {});
 
-export const settingsStore = new JsonStore<{ adBlockEnabled: boolean }>('settings', { adBlockEnabled: true });
+export const settingsStore = new JsonStore<{ adBlockEnabled: boolean } & Appearance>('settings', {
+  adBlockEnabled: true,
+  showBorder: false,
+  sidebarExpanded: false,
+  compactMode: false,
+});
+
+/** The window's size and position (outside fullscreen), so it reopens the same way. */
+export const windowStore = new JsonStore<{ bounds: { x: number; y: number; width: number; height: number } | null }>(
+  'window',
+  { bounds: null },
+);
 
 export function flushAllStores(): void {
   sessionStore.flush();
   zoomStore.flush();
   settingsStore.flush();
+  windowStore.flush();
 }

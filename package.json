@@ -20,6 +20,7 @@
     "electron": "^44.7.0",
     "electron-builder": "^26.15.3",
     "esbuild": "^0.28.2",
+    "node-gyp": "^12.4.0",
     "typescript": "^5.9.3",
     "vite": "^8.3.4"
   },
@@ -64,6 +65,9 @@
     },
     "dmg": {
       "artifactName": "Browser-${version}-${arch}.dmg"
-    }
+    },
+    "asarUnpack": [
+      "out/native/**"
+    ]
   }
 }

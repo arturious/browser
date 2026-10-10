@@ -1,8 +1,15 @@
-import { app, BrowserWindow, ipcMain, Menu, nativeTheme, session, type MenuItemConstructorOptions } from 'electron';
-import type { HoveredTab, Popover, Rect } from '../shared/types';
+import {
+  app,
+  BrowserWindow,
+  ipcMain,
+  Menu,
+  nativeTheme,
+  session,
+  type MenuItemConstructorOptions,
+} from 'electron';
+import type { Appearance, Rect } from '../shared/types';
 import { AdBlocker } from './adblock';
 import { Browser, chromeWebPreferences } from './browser';
-import { Downloads } from './downloads';
 import { RENDERER_HTML } from './paths';
 import { flushPermissions, setUpPermissions } from './permissions';
 import { flushAllStores } from './store';
@@ -17,7 +24,6 @@ nativeTheme.themeSource = 'dark';
 
 if (!app.requestSingleInstanceLock()) app.exit(0);
 
-const downloads = new Downloads();
 const adBlocker = new AdBlocker();
 let browser: Browser | null = null;
 let settingsWindow: BrowserWindow | null = null;
@@ -32,16 +38,16 @@ app.whenReady().then(() => {
   app.setAboutPanelOptions({ applicationName: 'Browser', applicationVersion: app.getVersion() });
   const pages = session.defaultSession;
   setUpPermissions(pages, () => browser?.win ?? null);
-  downloads.start(pages);
   void adBlocker.start(pages);
 
   // Rendered before the interface asks for them.
   loadSymbols();
-  browser = new Browser(downloads, adBlocker);
-  downloads.host = browser;
+  browser = new Browser(adBlocker);
   adBlocker.onChange = () => browser?.changed();
   registerIPC(browser);
   Menu.setApplicationMenu(buildMenu());
+  // Brings the View menu's checkmarks in line with the saved settings.
+  browser.setAppearance({});
 
   void checkForUpdates(false);
 });
@@ -105,11 +111,14 @@ function registerIPC(browser: Browser): void {
   on('pip:toggle', () => browser.togglePiP());
   on('page:focus', () => browser.activeTab?.webContents?.focus());
   on('ui:page-bounds', (rect: Rect) => browser.setPageBounds(rect));
-  on('ui:hovered-tab', (tab: HoveredTab | null) => browser.setHoveredTab(tab));
-  on('ui:popover', (popover: Popover | null, anchor?: Rect) => browser.setPopover(popover, anchor));
-  on('download:open', (id: string) => downloads.open(id));
-  on('download:menu', (id: string) => browser.showDownloadMenu(id));
+  on('ui:topbar-menu', () => browser.showTopBarMenu());
+  on('ui:sidebar-peek', (open: boolean) => browser.setSidebarPeek(Boolean(open)));
+  on('appearance:set', (patch: Partial<Appearance>) => browser.setAppearance(patch));
+  on('tab:new', () => browser.command('new-tab'));
   on('adblock:set', (enabled: boolean) => adBlocker.setEnabled(enabled));
+  on('window:close', () => browser.win.close());
+  on('window:minimize', () => browser.win.minimize());
+  on('window:zoom', (fill: boolean) => browser.zoomWindow(fill));
 
   // From the helper script inside every web page.
   ipcMain.on('page:media', (event, state: { video: boolean; media: boolean }) => {
@@ -191,6 +200,22 @@ function buildMenu(): Menu {
         { label: 'Zoom In', accelerator: 'CmdOrCtrl+Plus', visible: false, click: () => active()?.zoomIn() },
         { label: 'Zoom Out', accelerator: 'CmdOrCtrl+-', click: () => active()?.zoomOut() },
         { label: 'Actual Size', accelerator: 'CmdOrCtrl+0', click: () => active()?.resetZoom() },
+        { type: 'separator' },
+        {
+          label: 'Expand Sidebar',
+          type: 'checkbox',
+          checked: false,
+          click: (item) => browser?.setAppearance({ sidebarExpanded: item.checked }),
+          id: 'expand-sidebar',
+        },
+        {
+          label: 'Compact Mode',
+          type: 'checkbox',
+          accelerator: 'Ctrl+Alt+C',
+          checked: false,
+          click: (item) => browser?.setAppearance({ compactMode: item.checked }),
+          id: 'compact-mode',
+        },
         { type: 'separator' },
         {
           label: 'Developer Tools',

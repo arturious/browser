@@ -15,11 +15,8 @@ const SYMBOL_NAMES = [
   'link',
   'checkmark',
   'macwindow',
-  'tray',
-  'clock.arrow.trianglehead.counterclockwise.rotate.90',
-  'xmark.circle',
-  'checkmark.circle',
-  'arrow.down.circle',
+  'minus',
+  'arrow.up.left.and.arrow.down.right',
 ];
 const WEIGHTS: SymbolWeight[] = ['regular', 'bold'];
 /** Rendered large and scaled down by the interface, so they stay crisp. */

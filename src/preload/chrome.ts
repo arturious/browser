@@ -1,4 +1,4 @@
-// The bridge between the browser's own interface (chrome, overlay, settings)
+// The bridge between the browser's own interface (chrome, compact sidebar, settings)
 // and the main process. Exposed as `window.browser`.
 import { contextBridge, ipcRenderer } from 'electron';
 import type { AppState, BrowserAPI, ChromeCommand } from '../shared/types';
@@ -18,6 +18,7 @@ const api: BrowserAPI = {
   // Fetched synchronously once, so icons are there on the very first render.
   symbols: ipcRenderer.sendSync('symbols:get'),
 
+  newTab: () => send('tab:new'),
   selectTab: (id) => send('tab:select', id),
   closeTab: (id) => send('tab:close', id),
   showTabMenu: (id) => send('tab:menu', id),
@@ -31,12 +32,15 @@ const api: BrowserAPI = {
   focusPage: () => send('page:focus'),
 
   setPageBounds: (rect) => send('ui:page-bounds', rect),
-  setHoveredTab: (tab) => send('ui:hovered-tab', tab),
-  setPopover: (popover, anchor) => send('ui:popover', popover, anchor),
+  showTopBarMenu: () => send('ui:topbar-menu'),
+  setAppearance: (patch) => send('appearance:set', patch),
+  setSidebarPeek: (open) => send('ui:sidebar-peek', open),
 
-  openDownload: (id) => send('download:open', id),
-  showDownloadMenu: (id) => send('download:menu', id),
   setAdBlockEnabled: (enabled) => send('adblock:set', enabled),
+
+  closeWindow: () => send('window:close'),
+  minimizeWindow: () => send('window:minimize'),
+  zoomWindow: (fill) => send('window:zoom', fill),
 };
 
 contextBridge.exposeInMainWorld('browser', api);

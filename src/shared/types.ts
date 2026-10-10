@@ -1,5 +1,5 @@
 // State shared between the main process (which owns it) and the renderers
-// (the window chrome and the floating overlay), which only ever see
+// (the window chrome and settings), which only ever see
 // snapshots of it — every change goes through an IPC action instead.
 
 export interface Rect {
@@ -28,37 +28,30 @@ export interface TabState {
   isUnloaded: boolean;
 }
 
-export interface DownloadState {
-  id: string;
-  filename: string;
-  progress: number;
-  isFinished: boolean;
-  failed: boolean;
-}
-
-export interface HoveredTab {
-  title: string;
-  isPlayingMedia: boolean;
-  /** The sidebar icon's frame, in window coordinates. */
-  rect: Rect;
-}
-
-export type Popover = 'downloads' | 'history';
-
 export interface UIState {
-  popover: Popover | null;
-  /** The toolbar button the open popover hangs from, in window coordinates. */
-  popoverAnchor: Rect | null;
-  hoveredTab: HoveredTab | null;
+  /** Compact mode's sidebar is out, over the page. */
+  sidebarPeek: boolean;
   isHtmlFullscreen: boolean;
+  /** The window buttons are hidden while the window is fullscreen. */
+  isWindowFullscreen: boolean;
 }
+
+export interface Appearance {
+  /** A margin of plain glass around the tinted frame, like a border. */
+  showBorder: boolean;
+  /** Tabs with their titles, rather than icons only. */
+  sidebarExpanded: boolean;
+  /** The sidebar is hidden and slides out over the page from the window's left edge. */
+  compactMode: boolean;
+}
+
+export const SIDEBAR_WIDTH = { collapsed: 56, expanded: 240 };
 
 export interface AppState {
   tabs: TabState[];
   activeTabId: string | null;
-  downloads: DownloadState[];
-  hasUnseenFinishedDownloads: boolean;
   adBlockEnabled: boolean;
+  appearance: Appearance;
   ui: UIState;
 }
 
@@ -73,7 +66,7 @@ export interface SymbolImage {
 }
 
 /** One-shot commands main sends to the chrome renderer. */
-export type ChromeCommand = 'new-tab' | 'focus-address' | 'download-started';
+export type ChromeCommand = 'new-tab' | 'focus-address';
 
 export interface BrowserAPI {
   getState(): AppState;
@@ -82,6 +75,8 @@ export interface BrowserAPI {
   /** Keyed "name:weight". */
   symbols: Record<string, SymbolImage>;
 
+  /** Opens the address bar for a new tab, wherever it was asked from. */
+  newTab(): void;
   selectTab(id: string): void;
   closeTab(id: string): void;
   showTabMenu(id: string): void;
@@ -95,10 +90,15 @@ export interface BrowserAPI {
   focusPage(): void;
 
   setPageBounds(rect: Rect): void;
-  setHoveredTab(tab: HoveredTab | null): void;
-  setPopover(popover: Popover | null, anchor?: Rect): void;
+  /** Right-click on the top bar: the appearance menu. */
+  showTopBarMenu(): void;
+  setAppearance(patch: Partial<Appearance>): void;
+  setSidebarPeek(open: boolean): void;
 
-  openDownload(id: string): void;
-  showDownloadMenu(id: string): void;
   setAdBlockEnabled(enabled: boolean): void;
+
+  closeWindow(): void;
+  minimizeWindow(): void;
+  /** `fill`: Option-click — zoom to fill the screen instead of going fullscreen. */
+  zoomWindow(fill: boolean): void;
 }

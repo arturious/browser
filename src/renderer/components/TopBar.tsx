@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
-import type { AppState, TabState } from '../../shared/types';
+import type { TabState } from '../../shared/types';
 import { displayHost } from '../../shared/url';
-import { api, rectOf } from '../state';
+import { api } from '../state';
 import { Icon, SymbolTransition } from './Icon';
 
 const PLACEHOLDER = 'Search or enter address.';
@@ -11,19 +11,33 @@ interface ToolbarButtonProps {
   disabled?: boolean;
   className?: string;
   onClick: () => void;
-  buttonRef?: React.Ref<HTMLDivElement>;
-  children?: ReactNode;
 }
 
-export function ToolbarButton({ icon, disabled, className = '', onClick, buttonRef, children }: ToolbarButtonProps) {
+export function ToolbarButton({ icon, disabled, className = '', onClick }: ToolbarButtonProps) {
   return (
-    <div
-      ref={buttonRef}
-      className={`toolbar-button ${disabled ? 'disabled' : ''} ${className}`}
-      onClick={() => !disabled && onClick()}
-    >
+    <div className={`toolbar-button ${disabled ? 'disabled' : ''} ${className}`} onClick={() => !disabled && onClick()}>
       {icon}
-      {children}
+    </div>
+  );
+}
+
+/**
+ * Close, minimize and zoom, drawn by us: muted gray like an inactive
+ * window's, in their colors with symbols while the pointer is over them.
+ * macOS can't be made to show its own that way on the active window.
+ */
+export function WindowButtons() {
+  return (
+    <div className="window-buttons">
+      <div className="window-button close" onClick={api.closeWindow}>
+        <Icon name="xmark" size={8} bold />
+      </div>
+      <div className="window-button minimize" onClick={api.minimizeWindow}>
+        <Icon name="minus" size={8} bold />
+      </div>
+      <div className="window-button zoom" onClick={(e) => api.zoomWindow(e.altKey)}>
+        <Icon name="arrow.up.left.and.arrow.down.right" size={7} bold />
+      </div>
     </div>
   );
 }
@@ -192,8 +206,7 @@ export function AddressBar({ activeTab }: AddressBarProps) {
       setCreating(true);
       setEditing(true);
     };
-    // Cmd+T comes from the menu; the sidebar's "+" from within the page.
-    window.addEventListener('browser:new-tab', startNewTab);
+    // Cmd+T and the sidebar's "+" both arrive from main.
     const unsubscribe = api.onCommand((command) => {
       if (command === 'new-tab') {
         startNewTab();
@@ -202,10 +215,7 @@ export function AddressBar({ activeTab }: AddressBarProps) {
         setEditing(true);
       }
     });
-    return () => {
-      window.removeEventListener('browser:new-tab', startNewTab);
-      unsubscribe();
-    };
+    return unsubscribe;
   }, []);
 
   useEffect(() => {
@@ -250,63 +260,4 @@ export function AddressBar({ activeTab }: AddressBarProps) {
       {activeTab && <PiPButton visible={activeTab.hasPlayingVideo} />}
     </div>
   );
-}
-
-export function HistoryButton({ open }: { open: boolean }) {
-  const ref = useRef<HTMLDivElement>(null);
-  const [wiggle, setWiggle] = useState(0);
-  return (
-    <ToolbarButton
-      buttonRef={ref}
-      icon={
-        <Icon
-          key={wiggle}
-          name="clock.arrow.trianglehead.counterclockwise.rotate.90"
-          size={14}
-          bold
-          className={wiggle ? 'wiggle-once' : ''}
-        />
-      }
-      onClick={() => {
-        setWiggle((n) => n + 1);
-        api.setPopover(open ? null : 'history', rectOf(ref.current!));
-      }}
-    />
-  );
-}
-
-/** The tray, which turns into a pie of the overall progress while files download. */
-export function DownloadsButton({ state, buttonRef }: { state: AppState; buttonRef: React.RefObject<HTMLDivElement | null> }) {
-  const active = state.downloads.filter((d) => !d.isFinished);
-  const isActive = active.length > 0;
-  const progress = isActive ? active.reduce((sum, d) => sum + d.progress, 0) / active.length : 0;
-  const open = state.ui.popover === 'downloads';
-
-  return (
-    <ToolbarButton
-      buttonRef={buttonRef}
-      className="downloads-button"
-      icon={
-        <>
-          <Icon name="tray" size={14} bold className={`swap ${isActive ? 'out' : ''}`} />
-          <svg className={`progress-pie swap ${isActive ? '' : 'out'}`} viewBox="0 0 16 16" width="16" height="16">
-            <circle cx="8" cy="8" r="7.25" fill="none" stroke="rgba(255,255,255,0.25)" strokeWidth="1.5" />
-            <path d={piePath(progress)} fill="currentColor" />
-          </svg>
-        </>
-      }
-      onClick={() => api.setPopover(open ? null : 'downloads', rectOf(buttonRef.current!))}
-    >
-      <span className={`unseen-dot ${state.hasUnseenFinishedDownloads && !isActive ? 'visible' : ''}`} />
-    </ToolbarButton>
-  );
-}
-
-function piePath(progress: number): string {
-  if (progress <= 0) return '';
-  if (progress >= 1) return 'M8 0 A8 8 0 1 1 7.999 0 Z';
-  const angle = progress * 2 * Math.PI - Math.PI / 2;
-  const x = 8 + 8 * Math.cos(angle);
-  const y = 8 + 8 * Math.sin(angle);
-  return `M8 8 L8 0 A8 8 0 ${progress > 0.5 ? 1 : 0} 1 ${x} ${y} Z`;
 }
