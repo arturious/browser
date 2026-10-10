@@ -1,19 +1,5 @@
 #!/bin/bash
+# Builds dist/Browser-<version>-arm64.dmg (and dist/mac-arm64/Browser.app).
 set -e
 cd "$(dirname "$0")"
-
-export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer
-swift build
-
-APP_NAME="Browser.app"
-BUILD_DIR="$(swift build --show-bin-path)"
-APP_DIR=".build/${APP_NAME}"
-
-rm -rf "$APP_DIR"
-mkdir -p "$APP_DIR/Contents/MacOS"
-mkdir -p "$APP_DIR/Contents/Resources"
-
-cp "$BUILD_DIR/browser" "$APP_DIR/Contents/MacOS/browser"
-cp "Sources/browser/Info.plist" "$APP_DIR/Contents/Info.plist"
-
-echo "Built $APP_DIR"
+npm run dist

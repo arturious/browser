@@ -1,0 +1,69 @@
+{
+  "name": "browser",
+  "productName": "Browser",
+  "version": "0.1.0",
+  "private": true,
+  "description": "A minimal macOS browser.",
+  "main": "out/main/index.js",
+  "scripts": {
+    "start": "node scripts/build.mjs && electron .",
+    "build": "node scripts/build.mjs",
+    "typecheck": "tsc -p tsconfig.json",
+    "dist": "node scripts/build.mjs && electron-builder --mac",
+    "postinstall": "install-electron"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.5",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.1.2",
+    "electron": "^44.7.0",
+    "electron-builder": "^26.15.3",
+    "esbuild": "^0.28.2",
+    "typescript": "^5.9.3",
+    "vite": "^8.3.4"
+  },
+  "dependencies": {
+    "@ghostery/adblocker-electron": "^2.20.1",
+    "lucide-react": "^1.55.0",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0"
+  },
+  "allowScripts": {
+    "esbuild@0.28.2": true,
+    "fsevents@2.3.3": true,
+    "electron-winstaller": false
+  },
+  "build": {
+    "appId": "com.arturbakhtygereyev.browser",
+    "productName": "Browser",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "out/**/*",
+      "package.json"
+    ],
+    "mac": {
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "arm64"
+          ]
+        }
+      ],
+      "category": "public.app-category.productivity",
+      "identity": "-",
+      "minimumSystemVersion": "12.0",
+      "extendInfo": {
+        "NSCameraUsageDescription": "Websites you allow can use the camera.",
+        "NSMicrophoneUsageDescription": "Websites you allow can use the microphone."
+      },
+      "hardenedRuntime": false
+    },
+    "dmg": {
+      "artifactName": "Browser-${version}-${arch}.dmg"
+    }
+  }
+}

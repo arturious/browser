@@ -1,0 +1,650 @@
+:root {
+  --toolbar-icon: #acacac;
+  --toolbar-icon-light: #b2b2b2;
+  --media-badge-icon: #c5c5c5;
+  --hover: rgba(255, 255, 255, 0.12);
+  --accent: #0a84ff;
+  color-scheme: dark;
+}
+
+html,
+body,
+#root {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+  background: transparent;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Helvetica Neue', sans-serif;
+  font-size: 13px;
+  color: white;
+  user-select: none;
+  cursor: default;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* MARK: Icons */
+
+.icon {
+  display: inline-block;
+  flex: none;
+}
+
+.icon.symbol {
+  background-color: currentColor;
+  -webkit-mask-size: contain;
+  -webkit-mask-repeat: no-repeat;
+  -webkit-mask-position: center;
+}
+
+/* SF Symbols' replace transitions: the old symbol shrinks away, the new one
+   grows in with a little spring overshoot. */
+.symbol-stack {
+  display: grid;
+  place-items: center;
+}
+
+.symbol-layer {
+  grid-area: 1 / 1;
+  display: flex;
+}
+
+.symbol-layer.leaving {
+  animation: symbol-down 0.16s ease-in forwards;
+}
+
+.symbol-layer.entering {
+  animation: symbol-up 0.42s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+
+.symbol-layer.entering.downUp {
+  animation-delay: 0.08s;
+}
+
+@keyframes symbol-down {
+  to {
+    opacity: 0;
+    transform: scale(0.3);
+  }
+}
+
+@keyframes symbol-up {
+  from {
+    opacity: 0;
+    transform: scale(0.3);
+  }
+}
+
+.wiggle-loop {
+  animation: wiggle 0.3s ease-in-out infinite;
+}
+
+.wiggle-once {
+  animation: wiggle 0.25s ease-in-out 2;
+}
+
+@keyframes wiggle {
+  0%,
+  100% {
+    transform: rotate(0);
+  }
+  25% {
+    transform: rotate(-14deg);
+  }
+  75% {
+    transform: rotate(14deg);
+  }
+}
+
+/* MARK: Window frame */
+
+/* Inset from the window edge, so a thin margin of plain (untinted) blur
+   shows around the tinted frame. */
+.frame {
+  position: fixed;
+  inset: 8px;
+  display: flex;
+  flex-direction: column;
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.45);
+  overflow: hidden;
+}
+
+.topbar {
+  position: relative;
+  flex: none;
+  height: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  -webkit-app-region: drag;
+}
+
+.toolbar-group {
+  display: flex;
+  align-items: center;
+}
+
+.toolbar-group.left {
+  padding-left: 12px;
+}
+
+.toolbar-group.right {
+  padding-right: 12px;
+  gap: 4px;
+}
+
+.toolbar-button {
+  position: relative;
+  width: 32px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  color: var(--toolbar-icon);
+  -webkit-app-region: no-drag;
+}
+
+.toolbar-button:hover:not(.disabled) {
+  background: var(--hover);
+}
+
+.toolbar-button.disabled {
+  opacity: 0.3;
+}
+
+.toolbar-button.small {
+  width: 24px;
+}
+
+.toolbar-button.light {
+  color: var(--toolbar-icon-light);
+}
+
+.toolbar-button.invisible {
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* MARK: Address bar */
+
+.address-bar {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  display: flex;
+  align-items: center;
+  gap: 0;
+  -webkit-app-region: no-drag;
+}
+
+.address-bar > * + * {
+  margin-left: -4px;
+}
+
+.address-display {
+  padding: 6px 8px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.address-host {
+  white-space: nowrap;
+  max-width: 600px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.address-input {
+  height: 20px;
+  padding: 0;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: white;
+  font: 500 13px -apple-system, BlinkMacSystemFont, sans-serif;
+}
+
+.address-input::placeholder {
+  color: rgba(255, 255, 255, 0.3);
+}
+
+.address-input::selection {
+  background: rgba(10, 132, 255, 0.5);
+}
+
+.new-tab-indicator {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 24px;
+  padding: 0 8px;
+  color: var(--toolbar-icon-light);
+  font-size: 13px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+/* MARK: Loading pill */
+
+/* Sits at the top bar's bottom edge, just above the page: the page's own
+   view covers anything drawn over it. */
+.loading-pill {
+  position: absolute;
+  left: 50%;
+  top: 29px;
+  width: 70px;
+  height: 5px;
+  border-radius: 3px;
+  overflow: hidden;
+  pointer-events: none;
+  transform: translateX(-50%) scale(0.01);
+  opacity: 0;
+  transition:
+    transform 0.3s ease-out,
+    opacity 0.3s ease-out,
+    width 0.3s ease-out;
+}
+
+.loading-pill.pulsing {
+  animation: breathe 1s ease-in-out infinite alternate;
+}
+
+.loading-pill.long,
+.loading-pill.stalled {
+  width: 140px;
+  transform: translateX(-50%) scale(1);
+  opacity: 1;
+}
+
+@keyframes breathe {
+  from {
+    transform: translateX(-50%) scale(0.85);
+    opacity: 0.6;
+  }
+  to {
+    transform: translateX(-50%) scale(0.95);
+    opacity: 1;
+  }
+}
+
+.shimmer {
+  width: 60%;
+  height: 100%;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.35);
+  animation: shimmer 1s linear infinite;
+}
+
+@keyframes shimmer {
+  from {
+    transform: translateX(-266%);
+  }
+  to {
+    transform: translateX(266%);
+  }
+}
+
+/* MARK: Downloads button */
+
+.downloads-button {
+  display: grid;
+  place-items: center;
+}
+
+.downloads-button .swap {
+  grid-area: 1 / 1;
+  transition:
+    opacity 0.35s cubic-bezier(0.34, 1.56, 0.64, 1),
+    transform 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.downloads-button .swap.out {
+  opacity: 0;
+  transform: scale(0.4);
+}
+
+.progress-pie path {
+  transition: d 0.2s ease-in-out;
+}
+
+.unseen-dot {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #ff3b30;
+  opacity: 0;
+  transform: scale(0);
+  transition:
+    opacity 0.2s ease-in-out,
+    transform 0.2s ease-in-out;
+}
+
+.unseen-dot.visible {
+  opacity: 1;
+  transform: scale(1);
+}
+
+.fly-dot {
+  position: fixed;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--accent);
+  pointer-events: none;
+  z-index: 10;
+}
+
+/* MARK: Sidebar and page */
+
+.main {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+
+.sidebar-slot {
+  flex: none;
+  width: 56px;
+  overflow: hidden;
+  transition: width 0.12s ease-in-out;
+}
+
+.sidebar-hidden .sidebar-slot {
+  width: 0;
+}
+
+.sidebar {
+  width: 56px;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  transition: transform 0.12s ease-in-out;
+}
+
+.sidebar-hidden .sidebar {
+  transform: translateX(-56px);
+}
+
+.pinned-item {
+  margin-top: 8px;
+}
+
+.sidebar-add {
+  flex: none;
+  width: 48px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  color: var(--toolbar-icon);
+  transition: background 0.15s ease-out;
+}
+
+.sidebar-add:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.sidebar-scroll {
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  overflow-y: auto;
+  padding-top: 4px;
+  margin-top: -4px;
+}
+
+.sidebar-scroll::-webkit-scrollbar {
+  display: none;
+}
+
+.sidebar-icon {
+  position: relative;
+  flex: none;
+  width: 48px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  transition: background 0.15s ease-out;
+}
+
+.sidebar-icon:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.sidebar-icon.active {
+  background: rgba(255, 255, 255, 0.15);
+}
+
+.favicon-wrap {
+  position: relative;
+  width: 16px;
+  height: 16px;
+}
+
+.favicon {
+  width: 16px;
+  height: 16px;
+  border-radius: 3px;
+  object-fit: contain;
+}
+
+.favicon.letter {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  font-size: 8px;
+  font-weight: 600;
+}
+
+.media-badge {
+  position: absolute;
+  top: -7px;
+  right: -7px;
+  width: 16px;
+  height: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: rgb(38, 38, 38);
+  color: var(--media-badge-icon);
+}
+
+.pin-badge {
+  position: absolute;
+  top: -1px;
+  left: 1px;
+  color: #999;
+  transform: rotate(45deg);
+  pointer-events: none;
+}
+
+.tab-close {
+  position: absolute;
+  top: -4px;
+  left: -2px;
+  width: 16px;
+  height: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #bfbfbf;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s ease-out;
+}
+
+.tab-close.visible {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+/* The hole the active tab's WebContentsView is placed over. */
+.page {
+  flex: 1;
+  margin: 0 8px 8px 0;
+  border-radius: 8px;
+  background: black;
+  transition: margin 0.12s ease-in-out;
+}
+
+.sidebar-hidden .page {
+  margin-left: 8px;
+}
+
+/* MARK: Overlay */
+
+.overlay-backdrop {
+  position: fixed;
+  inset: 0;
+}
+
+.popover {
+  position: absolute;
+  width: 280px;
+  padding-bottom: 6px;
+  border-radius: 10px;
+  background: rgb(33, 33, 33);
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.08) inset,
+    0 6px 32px rgba(0, 0, 0, 0.4);
+  transform-origin: top right;
+  animation: pop-in 0.15s ease-out;
+  overflow: hidden;
+}
+
+@keyframes pop-in {
+  from {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+}
+
+.popover-title {
+  padding: 10px 12px 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #a6a6a6;
+}
+
+.popover-empty {
+  padding: 14px 12px;
+  font-size: 12px;
+  color: rgba(235, 235, 245, 0.6);
+}
+
+.divider {
+  height: 1px;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.download-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 12px;
+}
+
+.download-row:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.download-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.download-name {
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.download-status.failed {
+  color: #ff453a;
+}
+
+.download-status.finished {
+  color: #32d74b;
+}
+
+.download-status.active {
+  color: #ccc;
+}
+
+.progress-track {
+  height: 4px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.15);
+  overflow: hidden;
+}
+
+.progress-fill {
+  height: 100%;
+  border-radius: 2px;
+  background: var(--accent);
+  transition: width 0.2s ease-out;
+}
+
+.tab-tooltip {
+  position: absolute;
+  top: 0;
+  left: 0;
+  max-width: 340px;
+  padding: 3px 8px;
+  background: rgb(31, 31, 31);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+  font: 10px Verdana, sans-serif;
+}
+
+.tooltip-line {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tooltip-line.secondary {
+  color: #a6a6a6;
+}
+
+/* MARK: Settings */
+
+[data-view='settings'] body {
+  background: #1e1e1e;
+}
+
+.settings {
+  padding: 24px;
+}
+
+.settings-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.settings-row input {
+  margin: 0;
+  accent-color: var(--accent);
+}
