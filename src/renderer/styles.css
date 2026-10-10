@@ -17,7 +17,7 @@ body,
 }
 
 body {
-  font-family: -apple-system, BlinkMacSystemFont, 'Helvetica Neue', sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif;
   font-size: 13px;
   color: white;
   user-select: none;
@@ -113,6 +113,8 @@ body {
   border-radius: 10px;
 }
 
+/* Fullscreen: edge to edge, square corners. */
+.fullscreen.frame,
 .fullscreen.frame.bordered {
   inset: 0;
   border-radius: 0;
@@ -132,61 +134,19 @@ body {
   align-items: center;
 }
 
-/* MARK: Window buttons */
-
-/* macOS's own size: 14px circles, 23px apart. */
-.window-buttons {
-  display: flex;
-  gap: 9px;
-  padding-left: 12px;
-  -webkit-app-region: no-drag;
-}
-
-.window-button {
-  width: 14px;
-  height: 14px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 50%;
-  background: rgba(255, 255, 255, 0.18);
-  color: rgba(0, 0, 0, 0.6);
-}
-
-.window-button .icon {
-  opacity: 0;
-}
-
-.window-buttons:hover .window-button.close {
-  background: #ff5f57;
-}
-
-.window-buttons:hover .window-button.minimize {
-  background: #febc2e;
-}
-
-.window-buttons:hover .window-button.zoom {
-  background: #28c840;
-}
-
-.window-buttons:hover .icon {
-  opacity: 1;
-}
-
-.window-button:active {
-  filter: brightness(0.8);
-}
-
-/* In fullscreen there are no window buttons, so the toolbar starts at the edge. */
-.fullscreen .window-buttons {
-  display: none;
-}
-
-/* 4px after the window buttons. */
+/* Starts 4px after the traffic lights. Where they end comes from the system
+   (Window Controls Overlay), which adds a margin after them equal to their
+   inset from the window's edge: 12px, or 20px with the border (whose frame
+   is itself inset 8px). */
 .toolbar-group.left {
-  padding-left: 4px;
+  padding-left: calc(env(titlebar-area-x, 84px) - 12px + 4px);
 }
 
+.bordered .toolbar-group.left {
+  padding-left: calc(env(titlebar-area-x, 100px) - 20px - 8px + 4px);
+}
+
+/* In fullscreen there are no traffic lights, so the toolbar starts at the edge. */
 .fullscreen .toolbar-group.left {
   padding-left: 12px;
 }
@@ -264,7 +224,10 @@ body {
   outline: none;
   background: transparent;
   color: white;
-  font: 500 13px -apple-system, BlinkMacSystemFont, sans-serif;
+  font:
+    500 13px -apple-system,
+    BlinkMacSystemFont,
+    sans-serif;
 }
 
 .address-input::placeholder {
@@ -359,6 +322,7 @@ body {
    compact mode, where the sidebar slides out over the page instead. The
    sidebar itself keeps its width, so the slot reveals it as it grows. */
 .sidebar-slot {
+  position: relative;
   flex: none;
   width: 56px;
   overflow: hidden;
@@ -366,7 +330,29 @@ body {
 }
 
 .sidebar-expanded .sidebar-slot {
-  width: 240px;
+  width: var(--sidebar-width);
+}
+
+/* Follows the pointer exactly while its edge is dragged. */
+.resizing .sidebar-slot,
+.resizing .page {
+  transition: none;
+}
+
+.resizing,
+.resizing * {
+  cursor: col-resize !important;
+}
+
+/* Inside the sidebar's right edge (the page's view covers everything right
+   of it). */
+.sidebar-resizer {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 8px;
+  width: 6px;
+  cursor: col-resize;
 }
 
 .compact .sidebar-slot {
@@ -383,7 +369,7 @@ body {
 }
 
 .sidebar.expanded {
-  width: 240px;
+  width: var(--sidebar-width);
   align-items: stretch;
   padding: 0 8px;
   box-sizing: border-box;
@@ -571,12 +557,12 @@ body {
   width: 16px;
 }
 
-[data-view='sidebar'] body {
+[data-view="sidebar"] body {
   background: transparent;
 }
 
-/* The sidebar out over the page, with Zen's spring: a slight overshoot as it
-   lands, and a quicker slide back. */
+/* The sidebar out over the page, with a barely-there overshoot as it lands,
+   and a quicker slide back. */
 .peek {
   position: absolute;
   top: 0;
@@ -595,7 +581,7 @@ body {
 
 .peek.open {
   transform: none;
-  transition: transform 0.25s cubic-bezier(0.25, 1.25, 0.45, 1);
+  transition: transform 0.25s cubic-bezier(0.25, 1.2, 0.45, 1);
 }
 
 .peek .pinned-item:first-child {
@@ -604,7 +590,7 @@ body {
 
 /* MARK: Settings */
 
-[data-view='settings'] body {
+[data-view="settings"] body {
   background: #1e1e1e;
 }
 

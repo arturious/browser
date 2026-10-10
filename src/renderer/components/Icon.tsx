@@ -2,8 +2,6 @@ import { useLayoutEffect, useRef, useState } from 'react';
 import {
   AppWindow,
   ArrowLeft,
-  Maximize2,
-  Minus,
   ArrowRight,
   Check,
   Link,
@@ -32,8 +30,6 @@ const FALLBACKS: Record<string, LucideIcon> = {
   link: Link,
   checkmark: Check,
   macwindow: AppWindow,
-  minus: Minus,
-  'arrow.up.left.and.arrow.down.right': Maximize2,
 };
 
 interface IconProps {

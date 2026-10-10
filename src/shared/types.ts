@@ -32,7 +32,7 @@ export interface UIState {
   /** Compact mode's sidebar is out, over the page. */
   sidebarPeek: boolean;
   isHtmlFullscreen: boolean;
-  /** The window buttons are hidden while the window is fullscreen. */
+  /** The traffic lights are hidden while the window is fullscreen. */
   isWindowFullscreen: boolean;
 }
 
@@ -41,11 +41,18 @@ export interface Appearance {
   showBorder: boolean;
   /** Tabs with their titles, rather than icons only. */
   sidebarExpanded: boolean;
+  /** The expanded sidebar's width, dragged by its right edge. */
+  sidebarWidth: number;
   /** The sidebar is hidden and slides out over the page from the window's left edge. */
   compactMode: boolean;
 }
 
-export const SIDEBAR_WIDTH = { collapsed: 56, expanded: 240 };
+/** The expanded sidebar can be dragged between `minExpanded` and `maxExpanded`. */
+export const SIDEBAR_WIDTH = { collapsed: 56, minExpanded: 140, maxExpanded: 240 };
+
+export function clampSidebarWidth(width: number): number {
+  return Math.round(Math.min(Math.max(width, SIDEBAR_WIDTH.minExpanded), SIDEBAR_WIDTH.maxExpanded));
+}
 
 export interface AppState {
   tabs: TabState[];
@@ -96,9 +103,4 @@ export interface BrowserAPI {
   setSidebarPeek(open: boolean): void;
 
   setAdBlockEnabled(enabled: boolean): void;
-
-  closeWindow(): void;
-  minimizeWindow(): void;
-  /** `fill`: Option-click — zoom to fill the screen instead of going fullscreen. */
-  zoomWindow(fill: boolean): void;
 }

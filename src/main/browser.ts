@@ -11,11 +11,11 @@ import {
   type WebContents,
   type WebPreferences,
 } from 'electron';
-import { SIDEBAR_WIDTH, type Appearance, type AppState, type ChromeCommand, type Rect, type UIState } from '../shared/types';
+import { clampSidebarWidth, SIDEBAR_WIDTH, type Appearance, type AppState, type ChromeCommand, type Rect, type UIState } from '../shared/types';
 import { resolveInput } from '../shared/url';
 import type { AdBlocker } from './adblock';
 import { showPageContextMenu } from './context-menu';
-import { applyGlass } from './glass';
+import { applyGlass, setGlassFullscreen } from './glass';
 import { CHROME_PRELOAD, RENDERER_HTML } from './paths';
 import { sessionStore, settingsStore, windowStore } from './store';
 import { Tab, type TabHost } from './tab';
@@ -83,10 +83,11 @@ export class Browser implements TabHost {
       show: false,
       title: 'Browser',
       // Keeps a real titled window (native edge resizing) with the title
-      // bar and traffic lights hidden; the top bar is the drag area and
-      // draws its own window buttons — gray until hovered, like an
-      // inactive window's, which the native ones can't be made to do.
+      // bar hidden; the top bar is the drag area. The traffic lights sit in
+      // it (placed by placeTrafficLights), and the overlay tells the
+      // interface where they end.
       titleBarStyle: 'hidden',
+      titleBarOverlay: true,
       // See-through, with Liquid Glass put behind the content by
       // applyGlass below.
       transparent: true,
@@ -96,7 +97,7 @@ export class Browser implements TabHost {
       hasShadow: false,
       webPreferences: chromeWebPreferences(),
     });
-    this.win.setWindowButtonVisibility(false);
+    this.placeTrafficLights();
     applyGlass(this.win);
     void this.win.loadFile(RENDERER_HTML, { query: { view: 'chrome' } });
     this.win.once('ready-to-show', () => this.win.show());
@@ -118,8 +119,14 @@ export class Browser implements TabHost {
     });
     // Fullscreen hides the traffic lights (the toolbar moves back left) and
     // changes the content size.
-    this.win.on('enter-full-screen', () => this.setUI({ isWindowFullscreen: true }));
-    this.win.on('leave-full-screen', () => this.setUI({ isWindowFullscreen: false }));
+    this.win.on('enter-full-screen', () => {
+      setGlassFullscreen(this.win, true);
+      this.setUI({ isWindowFullscreen: true });
+    });
+    this.win.on('leave-full-screen', () => {
+      setGlassFullscreen(this.win, false);
+      this.setUI({ isWindowFullscreen: false });
+    });
 
     this.restoreSession();
     // Not time-critical (idle is measured in tens of minutes), so a coarse
@@ -214,12 +221,14 @@ export class Browser implements TabHost {
 
     // Compact mode's sidebar floats over the page's left edge, in line with
     // it; the view leaves room on the right for the panel's shadow.
-    const { sidebarExpanded, compactMode } = this.appearance;
+    const { sidebarExpanded, sidebarWidth, compactMode } = this.appearance;
     if (compactMode && this.ui.sidebarPeek && !this.ui.isHtmlFullscreen) {
-      const width = sidebarExpanded ? SIDEBAR_WIDTH.expanded : SIDEBAR_WIDTH.collapsed;
+      const width = sidebarExpanded ? sidebarWidth : SIDEBAR_WIDTH.collapsed;
       this.peekView.setBounds({ x: this.pageBounds.x, y: this.pageBounds.y, width: width + 24, height: this.pageBounds.height });
       this.peekView.setVisible(true);
-    } else if (!compactMode || this.ui.isHtmlFullscreen) {
+    } else if (!compactMode || this.ui.isHtmlFullscreen || !this.peekHideTimer) {
+      // Closed and not sliding away: never leave the (transparent) view
+      // over the page, where it would block clicks.
       this.peekView.setVisible(false);
     }
 
@@ -423,8 +432,8 @@ export class Browser implements TabHost {
   // MARK: Appearance
 
   get appearance(): Appearance {
-    const { showBorder, sidebarExpanded, compactMode } = settingsStore.get();
-    return { showBorder, sidebarExpanded, compactMode };
+    const { showBorder, sidebarExpanded, sidebarWidth, compactMode } = settingsStore.get();
+    return { showBorder, sidebarExpanded, sidebarWidth: clampSidebarWidth(sidebarWidth), compactMode };
   }
 
   setAppearance(patch: Partial<Appearance>): void {
@@ -432,8 +441,12 @@ export class Browser implements TabHost {
     for (const key of ['showBorder', 'sidebarExpanded', 'compactMode'] as const) {
       if (typeof patch[key] === 'boolean') next[key] = patch[key];
     }
+    if (typeof patch.sidebarWidth === 'number' && Number.isFinite(patch.sidebarWidth)) {
+      next.sidebarWidth = clampSidebarWidth(patch.sidebarWidth);
+    }
     settingsStore.set({ ...settingsStore.get(), ...next });
     if (!next.compactMode) this.setSidebarPeek(false);
+    this.placeTrafficLights();
     // Keep the View menu's checkmarks in step.
     const menu = Menu.getApplicationMenu();
     const expand = menu?.getMenuItemById('expand-sidebar');
@@ -444,17 +457,30 @@ export class Browser implements TabHost {
   }
 
   /**
+   * Centers the traffic lights in the top bar, which sits inside the frame —
+   * inset 8px from the window when the border shows.
+   */
+  private placeTrafficLights(): void {
+    const inset = this.appearance.showBorder ? 8 : 0;
+    this.win.setWindowButtonPosition({ x: inset + 12, y: inset + 10 });
+  }
+
+  /**
    * Compact mode's sidebar sliding out (or back). It stays mounted a moment
    * after closing, while it slides away.
    */
   setSidebarPeek(open: boolean): void {
+    if (open && !this.appearance.compactMode) return;
+    // Repeats (a second "close" while it slides away) change nothing — and
+    // mustn't cancel the pending hide, or the invisible view would stay over
+    // the page and swallow its clicks.
+    if (open === this.ui.sidebarPeek) return;
     if (this.peekHideTimer) clearTimeout(this.peekHideTimer);
     this.peekHideTimer = null;
-    if (open && !this.appearance.compactMode) return;
-    if (open === this.ui.sidebarPeek) return;
     this.setUI({ sidebarPeek: open });
     if (!open) {
       this.peekHideTimer = setTimeout(() => {
+        this.peekHideTimer = null;
         if (!this.ui.sidebarPeek) this.peekView.setVisible(false);
       }, 260);
     }
@@ -505,6 +531,7 @@ export class Browser implements TabHost {
     }
   }
 
+
   // MARK: Picture in Picture
 
   togglePiP(): void {
@@ -551,18 +578,6 @@ export class Browser implements TabHost {
     app.focus({ steal: true });
     this.win.show();
     this.selectTab(tab);
-  }
-
-  // MARK: Window buttons
-
-  /** The green button: fullscreen, or with Option, zoom (fill the screen without going fullscreen). */
-  zoomWindow(fill: boolean): void {
-    if (fill) {
-      if (this.win.isMaximized()) this.win.unmaximize();
-      else this.win.maximize();
-    } else {
-      this.win.setFullScreen(!this.win.isFullScreen());
-    }
   }
 
   // MARK: Teardown

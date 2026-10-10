@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, type CSSProperties } from 'react';
 import { Sidebar } from './components/Sidebar';
 import { api, useAppState } from './state';
 
@@ -29,6 +29,7 @@ export function Peek() {
   return (
     <div
       className={`peek ${open ? 'open' : ''}`}
+      style={{ '--sidebar-width': `${state.appearance.sidebarWidth}px` } as CSSProperties}
       onMouseEnter={() => {
         hovered.current = true;
         clearTimeout(leaveTimer.current);

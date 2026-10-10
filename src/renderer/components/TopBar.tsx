@@ -21,27 +21,6 @@ export function ToolbarButton({ icon, disabled, className = '', onClick }: Toolb
   );
 }
 
-/**
- * Close, minimize and zoom, drawn by us: muted gray like an inactive
- * window's, in their colors with symbols while the pointer is over them.
- * macOS can't be made to show its own that way on the active window.
- */
-export function WindowButtons() {
-  return (
-    <div className="window-buttons">
-      <div className="window-button close" onClick={api.closeWindow}>
-        <Icon name="xmark" size={8} bold />
-      </div>
-      <div className="window-button minimize" onClick={api.minimizeWindow}>
-        <Icon name="minus" size={8} bold />
-      </div>
-      <div className="window-button zoom" onClick={(e) => api.zoomWindow(e.altKey)}>
-        <Icon name="arrow.up.left.and.arrow.down.right" size={7} bold />
-      </div>
-    </div>
-  );
-}
-
 /** Back, forward, and reload — which wiggles, then turns into stop if loading drags on. */
 export function NavigationControls({ tab }: { tab: TabState }) {
   const [showStop, setShowStop] = useState(false);

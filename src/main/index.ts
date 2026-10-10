@@ -116,9 +116,6 @@ function registerIPC(browser: Browser): void {
   on('appearance:set', (patch: Partial<Appearance>) => browser.setAppearance(patch));
   on('tab:new', () => browser.command('new-tab'));
   on('adblock:set', (enabled: boolean) => adBlocker.setEnabled(enabled));
-  on('window:close', () => browser.win.close());
-  on('window:minimize', () => browser.win.minimize());
-  on('window:zoom', (fill: boolean) => browser.zoomWindow(fill));
 
   // From the helper script inside every web page.
   ipcMain.on('page:media', (event, state: { video: boolean; media: boolean }) => {
@@ -222,8 +219,7 @@ function buildMenu(): Menu {
           accelerator: 'Alt+CmdOrCtrl+I',
           click: () => active()?.webContents?.toggleDevTools(),
         },
-        { type: 'separator' },
-        { role: 'togglefullscreen', label: 'Enter Full Screen', accelerator: 'Ctrl+Cmd+F' },
+        // macOS adds its own "Enter Full Screen" item to the View menu.
       ],
     },
     {

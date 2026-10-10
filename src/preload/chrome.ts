@@ -37,10 +37,6 @@ const api: BrowserAPI = {
   setSidebarPeek: (open) => send('ui:sidebar-peek', open),
 
   setAdBlockEnabled: (enabled) => send('adblock:set', enabled),
-
-  closeWindow: () => send('window:close'),
-  minimizeWindow: () => send('window:minimize'),
-  zoomWindow: (fill) => send('window:zoom', fill),
 };
 
 contextBridge.exposeInMainWorld('browser', api);

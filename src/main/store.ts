@@ -64,6 +64,7 @@ export const settingsStore = new JsonStore<{ adBlockEnabled: boolean } & Appeara
   adBlockEnabled: true,
   showBorder: false,
   sidebarExpanded: false,
+  sidebarWidth: 240,
   compactMode: false,
 });
 

@@ -1,14 +1,18 @@
-import { useEffect, useLayoutEffect, useRef } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from 'react';
+import { clampSidebarWidth } from '../shared/types';
 import { Icon } from './components/Icon';
 import { LoadingPill } from './components/LoadingPill';
 import { Sidebar } from './components/Sidebar';
-import { AddressBar, NavigationControls, ToolbarButton, WindowButtons } from './components/TopBar';
+import { AddressBar, NavigationControls, ToolbarButton } from './components/TopBar';
 import { api, rectOf, useAppState } from './state';
 
 /** The window's own interface: top bar, sidebar, and the hole the page shows through. */
 export function Chrome() {
   const state = useAppState();
   const { sidebarExpanded, compactMode, showBorder } = state.appearance;
+  // While dragging the sidebar's edge, the width lives here; it's saved on release.
+  const [draggedWidth, setDraggedWidth] = useState<number | null>(null);
+  const sidebarWidth = draggedWidth ?? state.appearance.sidebarWidth;
   const pageRef = useRef<HTMLDivElement>(null);
   const activeTab = state.tabs.find((tab) => tab.id === state.activeTabId);
 
@@ -58,7 +62,9 @@ export function Chrome() {
           compactMode ? 'compact' : '',
           state.ui.isWindowFullscreen ? 'fullscreen' : '',
           showBorder ? 'bordered' : '',
+          draggedWidth !== null ? 'resizing' : '',
         ].join(' ')}
+        style={{ '--sidebar-width': `${sidebarWidth}px` } as CSSProperties}
       >
         <div
           className="topbar"
@@ -69,7 +75,6 @@ export function Chrome() {
             api.showTopBarMenu();
           }}
         >
-          <WindowButtons />
           <div className="toolbar-group left">
             <ToolbarButton
               icon={<Icon name="sidebar.left" size={14} bold />}
@@ -85,10 +90,42 @@ export function Chrome() {
         <div className="main">
           <div className="sidebar-slot">
             <Sidebar tabs={state.tabs} activeTabId={state.activeTabId} expanded={sidebarExpanded} />
+            {sidebarExpanded && !compactMode && (
+              <SidebarResizer
+                onDrag={(width) => setDraggedWidth(clampSidebarWidth(width))}
+                onRelease={(width) => {
+                  api.setAppearance({ sidebarWidth: clampSidebarWidth(width) });
+                  setDraggedWidth(null);
+                }}
+              />
+            )}
           </div>
           <div className="page" ref={pageRef} />
         </div>
       </div>
     </>
+  );
+}
+
+/** The expanded sidebar's right edge, dragged to make it narrower (up to its default width). */
+function SidebarResizer({ onDrag, onRelease }: { onDrag: (width: number) => void; onRelease: (width: number) => void }) {
+  return (
+    <div
+      className="sidebar-resizer"
+      onMouseDown={(e) => {
+        if (e.button !== 0) return;
+        e.preventDefault();
+        const left = e.currentTarget.parentElement!.getBoundingClientRect().left;
+        const move = (event: MouseEvent) => onDrag(event.clientX - left);
+        const up = (event: MouseEvent) => {
+          window.removeEventListener('mousemove', move);
+          window.removeEventListener('mouseup', up);
+          onRelease(event.clientX - left);
+        };
+        window.addEventListener('mousemove', move);
+        window.addEventListener('mouseup', up);
+        onDrag(e.clientX - left);
+      }}
+    />
   );
 }
