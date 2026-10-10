@@ -21,6 +21,16 @@ export function ToolbarButton({ icon, disabled, className = '', onClick }: Toolb
   );
 }
 
+/** Turns compact mode on and off: the sidebar hidden, sliding out from the window's edge. */
+export function CompactModeButton({ compactMode }: { compactMode: boolean }) {
+  return (
+    <ToolbarButton
+      icon={<Icon name="sidebar.left" size={14} bold />}
+      onClick={() => api.setAppearance({ compactMode: !compactMode })}
+    />
+  );
+}
+
 /** Back, forward, and reload — which wiggles, then turns into stop if loading drags on. */
 export function NavigationControls({ tab }: { tab: TabState }) {
   const [showStop, setShowStop] = useState(false);

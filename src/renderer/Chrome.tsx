@@ -1,9 +1,8 @@
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from 'react';
 import { clampSidebarWidth } from '../shared/types';
-import { Icon } from './components/Icon';
 import { LoadingPill } from './components/LoadingPill';
 import { Sidebar } from './components/Sidebar';
-import { AddressBar, NavigationControls, ToolbarButton } from './components/TopBar';
+import { AddressBar, CompactModeButton, NavigationControls } from './components/TopBar';
 import { api, rectOf, useAppState } from './state';
 
 /** The window's own interface: top bar, sidebar, and the hole the page shows through. */
@@ -76,10 +75,7 @@ export function Chrome() {
           }}
         >
           <div className="toolbar-group left">
-            <ToolbarButton
-              icon={<Icon name="sidebar.left" size={14} bold />}
-              onClick={() => api.setAppearance({ sidebarExpanded: !sidebarExpanded })}
-            />
+            <CompactModeButton compactMode={compactMode} />
             {activeTab && <NavigationControls tab={activeTab} />}
           </div>
           <AddressBar activeTab={activeTab} />
