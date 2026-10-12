@@ -1,9 +1,12 @@
 import path from 'node:path';
 import type { BrowserWindow } from 'electron';
+import type { SidebarWheelPhase } from '../shared/types';
 
 interface GlassAddon {
   addGlass(handle: Buffer, cornerRadius: number): boolean;
   setGlassCornerRadius(handle: Buffer, cornerRadius: number): boolean;
+  watchWheelPhases(handle: Buffer, listener: (phase: SidebarWheelPhase) => void): (() => void) | false;
+  playHapticFeedback(): void;
 }
 
 /** macOS window corner radius (NSWindow._cornerRadius on macOS 26+). */
@@ -37,4 +40,12 @@ export function applyGlass(win: BrowserWindow): void {
 export function setGlassFullscreen(win: BrowserWindow, fullscreen: boolean): void {
   loadAddon()?.setGlassCornerRadius(win.getNativeWindowHandle(), fullscreen ? 0 : WINDOW_CORNER_RADIUS);
 }
+
+export function watchSidebarWheelPhases(win: BrowserWindow, listener: (phase: SidebarWheelPhase) => void): () => void {
+  const stop = loadAddon()?.watchWheelPhases(win.getNativeWindowHandle(), listener);
+  return stop || (() => {});
+}
+
+/** Zen uses the macOS alignment pulse when the add-space threshold changes. */
+export function playHapticFeedback(): void { loadAddon()?.playHapticFeedback(); }
 

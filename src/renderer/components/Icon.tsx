@@ -1,123 +1,20 @@
-import { useLayoutEffect, useRef, useState } from 'react';
-import {
-  AppWindow,
-  ArrowLeft,
-  ArrowRight,
-  Check,
-  Link,
-  PanelLeft,
-  PictureInPicture2,
-  Pin,
-  Plus,
-  RotateCw,
-  Volume2,
-  X,
-  type LucideIcon,
-} from 'lucide-react';
-import { api } from '../state';
+import type { CSSProperties } from 'react';
 
-/** Lucide stand-ins, used only if macOS doesn't provide an SF Symbol. */
-const FALLBACKS: Record<string, LucideIcon> = {
-  'arrow.backward': ArrowLeft,
-  'arrow.forward': ArrowRight,
-  'arrow.clockwise': RotateCw,
-  xmark: X,
-  plus: Plus,
-  'sidebar.left': PanelLeft,
-  pin: Pin,
-  pip: PictureInPicture2,
-  'speaker.wave.2': Volume2,
-  link: Link,
-  checkmark: Check,
-  macwindow: AppWindow,
+const assets = import.meta.glob('../assets/zen/chrome/*.svg', { eager: true, query: '?url', import: 'default' }) as Record<string, string>;
+const selectable = import.meta.glob('../assets/zen/selectable/*.svg', { eager: true, query: '?url', import: 'default' }) as Record<string, string>;
+const names: Record<string, string> = {
+  'arrow.backward': 'back', 'arrow.forward': 'forward', 'arrow.clockwise': 'reload',
+  xmark: 'close', plus: 'plus', 'sidebar.left': 'sidebar', pin: 'pin', pip: 'window',
+  'speaker.wave.2': 'tab-audio-playing-small', link: 'link', checkmark: 'checkbox',
+  macwindow: 'window', 'chevron.down': 'chevron', folder: 'folder', 'folder.open': 'folder',
+  'folder.badge.plus': 'folder', magnifyingglass: 'search-glass',
+  'line.3.horizontal.decrease': 'circle-bars-filter', ellipsis: 'menu', paintpalette: 'edit-theme',
+  shield: 'tracking-protection', doc: 'page-portrait', 'music.note': 'media-unmute',
+  film: 'video-fill', play: 'media-play', pause: 'media-pause',
 };
-
-interface IconProps {
-  name: string;
-  /** Like SwiftUI's `.font(.system(size:))`. */
-  size: number;
-  bold?: boolean;
-  className?: string;
-}
-
-/** An SF Symbol, tinted with the current text color. */
-export function Icon({ name, size, bold, className = '' }: IconProps) {
-  const symbol = api.symbols[`${name}:${bold ? 'bold' : 'regular'}`];
-  if (!symbol) {
-    const Fallback = FALLBACKS[name] ?? X;
-    return (
-      <Fallback
-        className={`icon ${className}`}
-        size={size * 1.1}
-        strokeWidth={bold ? 2.4 : 1.8}
-      />
-    );
-  }
-  // Rendered large; scaled to the size SwiftUI's .font(.system(size:)) would draw.
-  const scale = size / symbol.pointSize;
-  return (
-    <span
-      className={`icon symbol ${className}`}
-      style={{
-        width: symbol.width * scale,
-        height: symbol.height * scale,
-        WebkitMaskImage: `url(${symbol.url})`,
-      }}
-    />
-  );
-}
-
-interface Layer {
-  key: number;
-  name: string;
-  phase: 'idle' | 'entering' | 'leaving';
-}
-
-interface SymbolTransitionProps extends Omit<IconProps, 'name'> {
-  name: string;
-  /**
-   * SwiftUI's `.contentTransition(.symbolEffect(.replace…))`: `downUp`
-   * shrinks the old symbol away while the new one grows in; `offUp` drops
-   * the old one at once and grows the new one in.
-   */
-  effect?: 'downUp' | 'offUp';
-}
-
-/** A symbol that animates whenever `name` changes (but not when it first appears). */
-export function SymbolTransition({ name, effect = 'downUp', className = '', ...icon }: SymbolTransitionProps) {
-  const [layers, setLayers] = useState<Layer[]>([{ key: 0, name, phase: 'idle' }]);
-  const shown = useRef(name);
-  const nextKey = useRef(1);
-
-  useLayoutEffect(() => {
-    if (shown.current === name) return;
-    shown.current = name;
-    const entering: Layer = { key: nextKey.current++, name, phase: 'entering' };
-    setLayers((current) =>
-      effect === 'downUp'
-        ? [...current.filter((l) => l.phase !== 'leaving').map((l) => ({ ...l, phase: 'leaving' as const })), entering]
-        : [entering],
-    );
-  }, [name, effect]);
-
-  const settle = (layer: Layer) =>
-    setLayers((current) =>
-      layer.phase === 'leaving'
-        ? current.filter((l) => l.key !== layer.key)
-        : current.map((l) => (l.key === layer.key ? { ...l, phase: 'idle' } : l)),
-    );
-
-  return (
-    <span className={`symbol-stack ${className}`}>
-      {layers.map((layer) => (
-        <span
-          key={layer.key}
-          className={`symbol-layer ${layer.phase} ${effect}`}
-          onAnimationEnd={(e) => e.target === e.currentTarget && settle(layer)}
-        >
-          <Icon name={layer.name} {...icon} />
-        </span>
-      ))}
-    </span>
-  );
+interface IconProps { name: string; size: number; bold?: boolean; className?: string; }
+export function Icon({ name, size, className = '' }: IconProps) {
+  const file = `${names[name] ?? name}.svg`;
+  const url = assets[`../assets/zen/chrome/${file}`] ?? selectable[`../assets/zen/selectable/${file}`] ?? assets['../assets/zen/chrome/help.svg'];
+  return <span aria-hidden="true" className={`icon zen-source-icon ${className}`} style={{ width: size, height: size, maskImage: `url("${url}")` } as CSSProperties} />;
 }

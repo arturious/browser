@@ -7,26 +7,31 @@ import {
   session,
   type MenuItemConstructorOptions,
 } from 'electron';
-import type { Appearance, Rect } from '../shared/types';
+import type { Appearance, Rect, LibrarySection, Workspace, SiteBoost, InterfacePanel, WorkspaceTheme } from '../shared/types';
 import { AdBlocker } from './adblock';
 import { Browser, chromeWebPreferences } from './browser';
 import { RENDERER_HTML } from './paths';
 import { flushPermissions, setUpPermissions } from './permissions';
 import { flushAllStores } from './store';
-import { loadSymbols } from './symbols';
+import { BrowserExtensions, extensionStore } from './extensions';
 import { checkForUpdates } from './updater';
+import { declareMediaProtocol, registerMediaProtocol } from './media';
+import { playHapticFeedback } from './glass';
+
+declareMediaProtocol();
 
 app.setName('Browser');
 // Sites (Google sign-in especially) turn away browsers that announce
 // themselves as Electron; present as plain Chrome instead.
 app.userAgentFallback = app.userAgentFallback.replace(/ Electron\/\S+/, '').replace(/ Browser\/\S+/, '');
-nativeTheme.themeSource = 'dark';
+nativeTheme.themeSource = 'system';
 
 if (!app.requestSingleInstanceLock()) app.exit(0);
 
 const adBlocker = new AdBlocker();
 let browser: Browser | null = null;
 let settingsWindow: BrowserWindow | null = null;
+let extensions: BrowserExtensions | null = null;
 
 app.on('second-instance', () => {
   if (!browser) return;
@@ -40,9 +45,10 @@ app.whenReady().then(() => {
   setUpPermissions(pages, () => browser?.win ?? null);
   void adBlocker.start(pages);
 
-  // Rendered before the interface asks for them.
-  loadSymbols();
+  registerMediaProtocol();
   browser = new Browser(adBlocker);
+  extensions = new BrowserExtensions(browser);
+  void extensions.restore();
   adBlocker.onChange = () => browser?.changed();
   registerIPC(browser);
   Menu.setApplicationMenu(buildMenu());
@@ -55,22 +61,24 @@ app.whenReady().then(() => {
 app.on('before-quit', () => {
   browser?.prepareToQuit();
   flushAllStores();
+  extensionStore.flush();
   flushPermissions();
 });
 
 app.on('window-all-closed', () => app.quit());
 
 function showSettings(view: 'settings' | 'theme' = 'settings'): void {
+  if (view === 'theme') { browser?.openInterfacePanel('theme'); return; }
   if (settingsWindow && !settingsWindow.isDestroyed()) {
-    settingsWindow.setSize(view === 'theme' ? 360 : 780, view === 'theme' ? 300 : 560);
+    settingsWindow.setSize(780, 560);
     settingsWindow.show();
     settingsWindow.focus();
     void settingsWindow.loadFile(RENDERER_HTML, { query: { view } });
     return;
   }
   settingsWindow = new BrowserWindow({
-    width: view === 'theme' ? 360 : 780,
-    height: view === 'theme' ? 300 : 560,
+    width: 780,
+    height: 560,
     resizable: false,
     minimizable: false,
     maximizable: false,
@@ -99,9 +107,6 @@ function registerIPC(browser: Browser): void {
   ipcMain.on('state:get', (event) => {
     event.returnValue = browser.isTrustedSender(event.sender) ? browser.snapshot() : null;
   });
-  ipcMain.on('symbols:get', (event) => {
-    event.returnValue = browser.isTrustedSender(event.sender) ? loadSymbols() : {};
-  });
 
   on('tab:select', (id: string) => withTab(id, (tab) => browser.selectTab(tab)));
   on('tab:close', (id: string) => withTab(id, (tab) => browser.closeTab(tab)));
@@ -117,9 +122,47 @@ function registerIPC(browser: Browser): void {
   on('ui:page-bounds', (rect: Rect) => browser.setPageBounds(rect));
   on('ui:topbar-menu', () => browser.showTopBarMenu());
   on('ui:theme-editor', () => showSettings('theme'));
+  on('ui:panel', (kind: InterfacePanel, anchor?: Rect, workspace?: string) => browser.openInterfacePanel(kind, anchor, workspace));
+  on('ui:panel-close', () => browser.closeInterfacePanel());
+  ipcMain.on('ui:panel-ready', (event, requestId: number) => browser.interfacePanelReady(event.sender, requestId));
+  on('ui:settings', () => { browser.closeInterfacePanel(); showSettings(); });
+  on('extension:load', () => { void extensions?.chooseAndLoad(); });
+  on('extension:set', (id: string, patch: { enabled?: boolean; pinned?: boolean }) => { void extensions?.set(id, patch); });
+  on('extension:remove', (id: string) => extensions?.remove(id));
+  on('extension:open', (id: string, anchor?: Rect) => extensions?.open(id, anchor));
+  on('workspace:theme', (id: string, theme: WorkspaceTheme) => browser.setWorkspaceTheme(id, theme));
   on('ui:sidebar-peek', (open: boolean) => browser.setSidebarPeek(Boolean(open)));
   on('appearance:set', (patch: Partial<Appearance>) => browser.setAppearance(patch));
-  on('tab:new', () => browser.command('new-tab'));
+  on('tab:new', () => { browser.animateLibrary(false); browser.command('new-tab'); });
+  on('tab:pin', (id: string) => withTab(id, (tab) => browser.togglePin(tab)));
+  on('tab:essential', (id: string) => withTab(id, (tab) => browser.toggleEssential(tab)));
+  on('tab:move', (id: string, before: string | null, workspace: string, folder: string | null) => browser.moveTab(id, before, workspace, folder));
+  on('workspace:prompt', () => browser.command('create-workspace'));
+  on('folder:prompt', () => { browser.closeInterfacePanel(false); browser.command('create-folder'); });
+  on('workspace:select', (id: string) => browser.selectWorkspace(id));
+  on('workspace:create', (name: string, icon: string, color: string, theme?: WorkspaceTheme) => browser.createWorkspace(name, icon, color, theme));
+  on('workspace:update', (id: string, patch: Partial<Pick<Workspace, 'name' | 'icon' | 'color'>>) => browser.updateWorkspace(id, patch));
+  on('workspace:reorder', (id: string, index: number) => browser.reorderWorkspace(id, index));
+  on('workspace:menu', (id: string) => browser.showWorkspaceMenu(id));
+  on('folder:create', (name: string) => browser.createFolder(name));
+  on('folder:toggle', (id: string) => browser.toggleFolder(id));
+  on('folder:menu', (id: string) => browser.showFolderMenu(id));
+  on('library:toggle', (section?: LibrarySection) => browser.toggleLibrary(section));
+  on('library:close', () => browser.animateLibrary(false));
+  on('library:gesture', (progress: number, target?: boolean) => browser.setLibraryGesture(progress, target));
+  on('library:section', (section: LibrarySection) => browser.selectLibrarySection(section));
+  on('library:width', (width: number) => browser.setLibraryWidth(width));
+  on('boost:save', (boost: Omit<SiteBoost, 'id'> & { id?: string }) => browser.saveBoost(boost));
+  on('boost:toggle', (id: string) => browser.toggleBoost(id));
+  on('boost:menu', (id: string) => browser.showBoostMenu(id));
+  on('download:control', (id: string, action: 'pause' | 'resume' | 'cancel') => browser.controlDownload(id, action));
+  on('download:open', (id: string, reveal?: boolean) => browser.openDownload(id, reveal));
+  on('download:menu', (id: string) => browser.showDownloadMenu(id));
+  on('ui:haptic', () => playHapticFeedback());
+  on('download:preview', (id: string, origin: Rect) => browser.previewDownload(id, origin));
+  on('download:preview-close', () => browser.closeMediaPreview());
+  on('download:preview-step', (direction: number) => browser.stepMediaPreview(direction));
+  on('history:clear', () => browser.clearHistory());
   on('adblock:set', (enabled: boolean) => adBlocker.setEnabled(enabled));
 
   // From the helper script inside every web page.
@@ -219,6 +262,16 @@ function buildMenu(): Menu {
           id: 'compact-mode',
         },
         { type: 'separator' },
+        { label: 'Library', accelerator: 'CmdOrCtrl+Shift+L', click: () => browser?.toggleLibrary() },
+        { label: 'New Space…', click: () => browser?.command('create-workspace') },
+        { label: 'Previous Space', accelerator: 'Ctrl+Alt+Left', click: () => browser?.cycleWorkspace(-1) },
+        { label: 'Next Space', accelerator: 'Ctrl+Alt+Right', click: () => browser?.cycleWorkspace(1) },
+        { type: 'separator' },
+        { label: 'Browser Interface Developer Tools', accelerator: 'CmdOrCtrl+Shift+Alt+I', click: () => {
+          const contents = browser?.win.webContents;
+          if (contents?.isDevToolsOpened()) contents.closeDevTools();
+          else contents?.openDevTools({ mode: 'detach' });
+        } },
         {
           label: 'Developer Tools',
           accelerator: 'Alt+CmdOrCtrl+I',
@@ -231,6 +284,8 @@ function buildMenu(): Menu {
       label: 'History',
       submenu: [
         { label: 'Back', accelerator: 'CmdOrCtrl+[', click: () => active()?.goBack() },
+        { label: 'Show History', accelerator: 'CmdOrCtrl+Y', click: () => browser?.toggleLibrary('history') },
+        { label: 'Downloads', accelerator: 'CmdOrCtrl+J', click: () => browser?.toggleLibrary('downloads') },
         { label: 'Forward', accelerator: 'CmdOrCtrl+]', click: () => active()?.goForward() },
       ],
     },

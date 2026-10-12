@@ -1,17 +1,20 @@
 import type React from 'react';
 import { api, useAppState } from './state';
 import { useState } from 'react';
+import { Icon } from './components/Icon';
+import { useZenTheme } from './useZenTheme';
 
 export function Settings() {
   const state = useAppState();
+  useZenTheme(state);
   const [section, setSection] = useState<'general' | 'sidebar' | 'topbar'>('general');
 
   return (
     <main className="settings-window">
       <nav className="settings-tabs" aria-label="Settings sections">
-        <SettingsTab active={section === 'general'} icon="◎" label="General" onClick={() => setSection('general')} />
-        <SettingsTab active={section === 'sidebar'} icon="▤" label="Sidebar" onClick={() => setSection('sidebar')} />
-        <SettingsTab active={section === 'topbar'} icon="▱" label="Topbar" onClick={() => setSection('topbar')} />
+        <SettingsTab active={section === 'general'} icon="settings" label="General" onClick={() => setSection('general')} />
+        <SettingsTab active={section === 'sidebar'} icon="sidebar" label="Sidebar" onClick={() => setSection('sidebar')} />
+        <SettingsTab active={section === 'topbar'} icon="customize" label="Look and Feel" onClick={() => setSection('topbar')} />
       </nav>
       <section className="settings-content">
         <h1 className="settings-page-title">{section[0].toUpperCase() + section.slice(1)}</h1>
@@ -42,8 +45,8 @@ export function Settings() {
                 <output>{state.appearance.sidebarWidth}px</output>
                 <input
                   type="range"
-                  min="140"
-                  max="240"
+                  min="180"
+                  max="360"
                   value={state.appearance.sidebarWidth}
                   onChange={(event) => api.setAppearance({ sidebarWidth: Number(event.target.value) })}
                 />
@@ -54,20 +57,15 @@ export function Settings() {
         {section === 'topbar' && (
           <SettingsCard title="Topbar">
             <SettingsToggle
-              label="Show border"
+              label="Window padding"
               checked={state.appearance.showBorder}
               onChange={(checked) => api.setAppearance({ showBorder: checked })}
             />
             <div className="settings-control">
-              <span>Chrome style</span>
-              <select
-                value={state.appearance.themeStyle}
-                onChange={(event) => api.setAppearance({ themeStyle: event.target.value as 'gradient' | 'solid' })}
-              >
-                <option value="gradient">Glass Gradient</option>
-                <option value="solid">Solid Color</option>
-              </select>
+              <span>Workspace theme</span><button onClick={api.openThemeEditor}><Icon name="edit-theme" size={16} /> Edit Theme</button>
             </div>
+            <div className="settings-control"><span>Toolbar</span><button onClick={() => api.openInterfacePanel('customize')}><Icon name="customize" size={16} /> Customize Toolbar</button></div>
+            <div className="settings-control"><span>Extensions</span><button onClick={() => api.openInterfacePanel('extensions')}><Icon name="extension" size={16} /> Manage Extensions</button></div>
           </SettingsCard>
         )}
       </section>
@@ -88,7 +86,7 @@ function SettingsTab({
 }) {
   return (
     <button type="button" className={`settings-tab ${active ? 'active' : ''}`} onClick={onClick}>
-      <span className="settings-tab-icon">{icon}</span>
+      <span className="settings-tab-icon"><Icon name={icon} size={20} /></span>
       <span>{label}</span>
     </button>
   );

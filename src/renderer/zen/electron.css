@@ -1,0 +1,91 @@
+/* Electron/HTML adapter for the imported Zen stylesheet (MPL-2.0).
+   Geometry, curves, keyframes and states live in library-source.css. */
+.zen-library {
+  --toolbar-color: #e0dde4;
+  --toolbox-textcolor: #e0dde4;
+  --toolbar-color-scheme: dark;
+  --zen-primary-color: #9c88ff;
+  --zen-accent-button-color: #baa6e6;
+  --zen-accent-button-background: #baa6e6;
+  --color-accent-primary: #baa6e6;
+  --zen-branding-bg: #232027;
+  --border-radius-medium: 8px;
+  --border-radius-large: 12px;
+  --border-radius-small: 4px;
+  font-size: 14px;
+  position: fixed;
+  z-index: 20;
+  background: #18161b;
+  border-radius: 16px 0 0 16px;
+}
+.zen-library.solid-theme { background: var(--solid-color); }
+.library-panel { display: flex; flex-direction: row; }
+.library-section-host { min-height: 0; }
+.library-content { padding: 0; animation: none; min-width: 0; }
+.library-content[hidden] { display: none !important; }
+.library-tab { border: 0; background: transparent !important; transform: none !important; font-size: 12px !important; }
+.library-tab > span:not(.library-sprite) { text-align: center; }
+.library-sprite { flex: none; }
+.library-tab .library-download-indicator { display: none; }
+.library-content .library-search-top { flex: none; }
+.library-filter-panel, .library-filter-panel.open {
+  display: block; grid-template-rows: unset; opacity: 1; height: 0;
+  overflow: visible; transition: none;
+}
+.library-filter-panel > div { overflow: visible; }
+.library-search-box { padding-inline: 12px; height: 36px; }
+.library-filter-panel-inner { opacity: 0; }
+.library-search-top.open .library-filter-panel-inner { opacity: 1; }
+.library-results { overflow-x: hidden; }
+.library-section-spaces .library-results { transform: none; }
+.library-space-card { background: var(--zen-branding-bg); }
+.library-space-card::before { background: linear-gradient(150deg, color-mix(in srgb, var(--workspace-color) 22%, #232027), #1c1a20); }
+.library-space-card[shift="left"] { translate: -266px 0; }
+.library-space-card[shift="right"] { translate: 266px 0; }
+.library-space-card.dragging { scale: 1.03; z-index: 1; transition: scale .2s ease; }
+.library-space-card.dragging::before { box-shadow: 0 8px 16px rgba(0,0,0,.3); }
+.library-spaces.no-transition .library-space-card { transition: scale .2s ease, z-index .2s step-end; }
+.library-space-drag { flex: none; width: 20px; height: 26px; opacity: .35; padding: 0; border: 0; background: none; cursor: grab; }
+.library-space-drag:active { cursor: grabbing; }
+.library-space-card .space-title-button { text-overflow: ellipsis; }
+.library-load-more { min-height: 1px; flex: none; }
+.library-space-summary .library-space-drag { width: 20px; padding: 0; }
+.library-space-summary > span { flex: 1; }
+.library-button:hover img { animation: none; }
+.library-space-pins .library-row { contain: none; content-visibility: visible; min-height: 36px; height: 36px; padding: 0 8px; gap: 8px; border-radius: 8px; font-size: 12.5px; }
+.library-media-item { transform: none !important; overflow: hidden; }
+.library-media-item .library-media-thumb { width: auto; height: auto; }
+.library-boost-icon, .library-boost-row.disabled .library-boost-icon { background: transparent; filter: none; opacity: 1; }
+.library-boost-row.disabled .library-boost-icon::after { top: 50%; left: 50%; transform: translate(-50%, -50%) rotate(45deg); }
+.zen-library-media-preview .sidebar-foot-button:disabled { opacity: .3; cursor: default; }
+.zen-library-media-preview-open { border: 0; padding: 0; color: inherit; background: transparent; }
+.zen-library-media-preview-name { min-width: 0; }
+.sidebar-footer { position: relative; --zen-toolbox-padding: 8px; --border-radius-xsmall: 3px; --zen-primary-color: #9c88ff; --zen-accent-button-background: #baa6e6; }
+.workspace-strip { --zen-toolbox-padding: 8px; }
+.library-button { overflow: visible; }
+.zen-library-download-list-download { text-align: left; cursor: default; }
+.zen-library-download-action .icon { flex: none; }
+.add-space-swipe.ready .add-space-badge { animation: zen-swipe-add-icon-jump .2s ease; }
+.zen-folder-rows { padding-inline-start: 14px; transition: padding-inline-start .18s ease-in-out; }
+.tab-folder.collapsed .zen-folder-rows, .zen-sidebar:not(.expanded) .zen-folder-rows { padding-inline-start: 0; }
+.zen-folder-row { display: flow-root; overflow: hidden; }
+.zen-sidebar { --toolbox-textcolor: #e0dde4; --zen-primary-color: var(--workspace-color); --zen-accent-button-color: var(--workspace-color); }
+.zen-swipe-add-space-container, .zen-swipe-add-space-background { pointer-events: none; }
+.zen-swipe-add-space-container.space-section { pointer-events: auto; }
+.library-create-space { height: 30px; padding: 0; border: 0; cursor: pointer; flex: none; }
+.zen-sidebar .space-panel { contain: size layout; transition: none; }
+.swiping .sidebar-scroll { scrollbar-width: none; }
+.zen-sidebar .sidebar-tab { animation: none; }
+.sidebar-divider { height: 1px; transition: height .08s ease-in-out, padding .08s ease-in-out, opacity .06s ease-in-out; }
+.zen-sidebar .sidebar-tab.active { box-shadow: 0 .8px 1.5px rgba(0,0,0,.05); background: color-mix(in srgb, rgba(255,255,255,.18) 95%, var(--workspace-color)); }
+.zen-sidebar .sidebar-tab:not(.active):hover { background: color-mix(in srgb, currentColor 7%, transparent); }
+@media (prefers-reduced-motion: reduce) {
+  .zen-library *, .zen-sidebar * { animation-duration: .001ms !important; transition-duration: .001ms !important; }
+}
+/* Width is interpolated once in main so native page/chrome stay aligned. */
+.zen-library.open:not(.transitioning) { transition: none; }
+.zen-sidebar { position: relative; isolation: isolate; }
+.zen-sidebar::before, .zen-sidebar::after { content: ''; position: absolute; inset: 0; z-index: -1; border-radius: inherit; pointer-events: none; }
+.zen-sidebar::before { background: linear-gradient(145deg, color-mix(in srgb, var(--workspace-color) 12%, transparent), transparent); }
+.zen-sidebar::after { background: linear-gradient(145deg, color-mix(in srgb, var(--workspace-next-color, var(--workspace-color)) 12%, transparent), transparent); opacity: var(--workspace-crossfade, 0); }
+.zen-sidebar.adding-space .space-panel:not(.current) { visibility: hidden; }

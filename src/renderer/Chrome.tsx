@@ -1,17 +1,25 @@
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from 'react';
 import { clampSidebarWidth } from '../shared/types';
 import { LoadingPill } from './components/LoadingPill';
+import { Library } from './components/Library';
 import { Sidebar } from './components/Sidebar';
-import { AddressBar, CompactModeButton, NavigationControls } from './components/TopBar';
+import { AddressBar, CompactModeButton, NavigationControls, ToolbarActions } from './components/TopBar';
+import { useSidebarGestures } from './useSidebarGestures';
+import { useLibraryMotion } from './useLibraryMotion';
 import { api, rectOf, useAppState } from './state';
+import { useZenTheme } from './useZenTheme';
 
 /** The window's own interface: top bar, sidebar, and the hole the page shows through. */
 export function Chrome() {
   const state = useAppState();
+  useZenTheme(state);
+  const chromeRoot = useRef<HTMLElement>(document.documentElement);
+  const gesture = useSidebarGestures(chromeRoot, state, api.requestWorkspaceCreation);
   const { sidebarExpanded, compactMode, showBorder, themeStyle, solidColor } = state.appearance;
   // While dragging the sidebar's edge, the width lives here; it's saved on release.
   const [draggedWidth, setDraggedWidth] = useState<number | null>(null);
   const sidebarWidth = draggedWidth ?? state.appearance.sidebarWidth;
+  const pageOffset = useLibraryMotion(state, sidebarWidth);
   const pageRef = useRef<HTMLDivElement>(null);
   const activeTab = state.tabs.find((tab) => tab.id === state.activeTabId);
 
@@ -20,7 +28,10 @@ export function Chrome() {
   useLayoutEffect(() => {
     const element = pageRef.current;
     if (!element) return;
-    const report = () => api.setPageBounds(rectOf(element));
+    const report = () => {
+      const rect = rectOf(element);
+      api.setPageBounds({ ...rect, x: rect.x - pageOffset.current });
+    };
     const observer = new ResizeObserver(report);
     observer.observe(element);
     window.addEventListener('resize', report);
@@ -38,7 +49,8 @@ export function Chrome() {
     const until = performance.now() + 380;
     let frame = 0;
     const step = () => {
-      api.setPageBounds(rectOf(element));
+      const rect = rectOf(element);
+      api.setPageBounds({ ...rect, x: rect.x - pageOffset.current });
       if (performance.now() < until) frame = requestAnimationFrame(step);
     };
     frame = requestAnimationFrame(step);
@@ -51,7 +63,7 @@ export function Chrome() {
       {compactMode && (
         <div
           className={`sidebar-edge ${showBorder ? 'bordered' : ''}`}
-          onMouseMove={() => !state.ui.sidebarPeek && api.setSidebarPeek(true)}
+          onMouseMove={() => !state.ui.sidebarPeek && !state.ui.libraryOpen && !state.ui.libraryAnimating && api.setSidebarPeek(true)}
         />
       )}
       <div
@@ -63,6 +75,8 @@ export function Chrome() {
           showBorder ? 'bordered' : '',
           themeStyle === 'solid' ? 'solid-theme' : '',
           draggedWidth !== null ? 'resizing' : '',
+          state.ui.libraryOpen || state.ui.libraryAnimating ? 'library-visible' : '',
+          state.ui.libraryAnimating ? 'library-moving' : '',
         ].join(' ')}
         style={{ '--sidebar-width': `${sidebarWidth}px`, '--solid-color': solidColor } as CSSProperties}
       >
@@ -77,16 +91,17 @@ export function Chrome() {
         >
           <div className="toolbar-group left">
             <CompactModeButton compactMode={compactMode} />
-            {activeTab && <NavigationControls tab={activeTab} />}
+            <NavigationControls tab={activeTab} />
           </div>
           <AddressBar activeTab={activeTab} />
+          <ToolbarActions state={state} />
           {activeTab && (
             <LoadingPill isLoading={activeTab.isLoading} color={activeTab.themeColor} tabId={activeTab.id} />
           )}
         </div>
         <div className="main">
-          <div className="sidebar-slot">
-            <Sidebar tabs={state.tabs} activeTabId={state.activeTabId} expanded={sidebarExpanded} />
+          <div className="sidebar-slot" inert={(state.ui.libraryOpen || state.ui.libraryAnimating) && !state.ui.libraryGestureActive}>
+            <Sidebar state={state} expanded={sidebarExpanded} externalGesture={gesture} />
             {sidebarExpanded && !compactMode && (
               <SidebarResizer
                 onDrag={(width) => setDraggedWidth(clampSidebarWidth(width))}
@@ -97,9 +112,12 @@ export function Chrome() {
               />
             )}
           </div>
-          <div className="page" ref={pageRef} />
+          <div className="page" ref={pageRef}>
+            {!activeTab && <div className="browser-empty"><button onClick={api.newTab}>New Tab <kbd>⌘T</kbd></button></div>}
+          </div>
         </div>
       </div>
+      <Library state={state} />
     </>
   );
 }

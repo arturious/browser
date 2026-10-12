@@ -10,7 +10,9 @@
     "build": "node scripts/build.mjs",
     "typecheck": "tsc -p tsconfig.json",
     "dist": "node scripts/build.mjs && electron-builder --mac",
-    "postinstall": "install-electron"
+    "postinstall": "install-electron",
+    "test": "node scripts/test-browser.mjs",
+    "import:zen": "node scripts/import-zen-interface.mjs"
   },
   "devDependencies": {
     "@types/node": "^26.6.5",
@@ -43,7 +45,15 @@
     },
     "files": [
       "out/**/*",
-      "package.json"
+      "package.json",
+      "src/**/*",
+      "native/glass.mm",
+      "native/binding.gyp",
+      "scripts/*.mjs",
+      "vite.config.mts",
+      "tsconfig.json",
+      "THIRD_PARTY_NOTICES.md",
+      "LICENSES/**/*"
     ],
     "mac": {
       "target": [

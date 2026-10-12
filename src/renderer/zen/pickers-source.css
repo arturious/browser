@@ -1,0 +1,152 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. https://mozilla.org/MPL/2.0/. Generated from the supplied Zen checkout. */
+#PanelUI-zen-emojis-picker {
+  --panel-width: 250px;
+  --panel-padding: 0px;
+
+  #PanelUI-zen-emojis-picker-header {
+    gap: 10px;
+    align-items: center;
+    padding: 0 10px;
+    padding-bottom: 6px;
+  }
+
+  #PanelUI-zen-emojis-picker-pages {
+    overflow: hidden;
+    max-height: 230px;
+
+    & > * {
+      min-width: 100%;
+    }
+  }
+
+  &[only-svg-icons="true"] {
+    & #PanelUI-zen-emojis-picker-change-emojis {
+      display: none;
+    }
+
+    & #PanelUI-zen-emojis-picker-change-svg {
+      pointer-events: none;
+    }
+
+    & #PanelUI-zen-emojis-picker-pages > .zen-vbox[emojis="true"] {
+      display: none;
+    }
+  }
+
+  &[hide-none-option="true"] {
+    & #PanelUI-zen-emojis-picker-none {
+      opacity: 0;
+      pointer-events: none;
+    }
+  }
+
+  #PanelUI-zen-emojis-picker-none label {
+    display: none;
+  }
+
+  #PanelUI-zen-emojis-picker-search {
+    padding: 4px;
+    width: 100%;
+  }
+
+  #PanelUI-zen-picker-header {
+    padding: 6px 16px;
+    justify-content: space-between;
+
+    & > button:first-of-type {
+      pointer-events: none;
+    }
+
+    & #PanelUI-zen-emojis-buttons-wrapper {
+      gap: 4px;
+
+      & button {
+        appearance: none;
+        font-size: small;
+        padding: 0 6px;
+        border-radius: 4px;
+        font-weight: 600;
+
+        &:hover {
+          background-color: light-dark(rgba(0, 0, 0, 0.1), rgba(255, 255, 255, 0.1));
+        }
+
+        &.selected {
+          background-color: light-dark(rgba(0, 0, 0, 0.1), rgba(255, 255, 255, 0.1));
+        }
+      }
+    }
+  }
+
+  #PanelUI-zen-emojis-picker-list,
+  #PanelUI-zen-emojis-picker-svgs {
+    overflow-y: auto;
+    overflow-x: hidden;
+    width: 100%;
+
+    padding: 10px;
+    padding-top: 5px;
+
+    gap: 5px;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(28px, 1fr));
+
+    .zen-emojis-picker-emoji {
+      font-size: 14px;
+      padding: 0 !important;
+      & image {
+        display: none;
+      }
+    }
+
+    .zen-emojis-picker-svg {
+      padding: 4px !important;
+      & label {
+        display: none;
+      }
+
+      & .toolbarbutton-icon {
+        width: 22px;
+      }
+    }
+  }
+
+  .zen-emojis-picker-emoji,
+  .zen-emojis-picker-svg,
+  #PanelUI-zen-emojis-picker-none {
+    width: 22px;
+    height: 22px;
+    appearance: none;
+    transition: opacity 0.08s ease-in-out;
+
+    &:hover {
+      background-color: light-dark(rgba(0, 0, 0, 0.1), rgba(255, 255, 255, 0.1));
+      border-radius: 4px;
+      cursor: pointer;
+    }
+  }
+}
+
+.toolbarbutton-1:not(#tabs-newtab-button),
+.urlbar-page-action,
+.identity-box-button {
+  --tab-border-radius: 8px;
+  --toolbarbutton-border-radius: var(--tab-border-radius);
+  --toolbarbutton-padding-inner: 6px;
+  --toolbarbutton-padding-outer: 1px;
+  --toolbarbutton-icon-fill: color-mix(in srgb, currentColor 70%, transparent);
+
+  transition:
+    background-color 0.1s,
+    transform 0.2s;
+
+  &[open="true"] {
+    transition: background-color 0.1s;
+  }
+
+  &:not([open="true"]):active:hover {
+    transform: scale(0.95);
+  }
+}
+

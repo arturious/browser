@@ -15,6 +15,8 @@ import { adjustThemeColor } from './theme-color';
 /** What a tab needs from the window that holds it. */
 export interface TabHost {
   changed(): void;
+  applyBoost(tab: Tab): void;
+  recordVisit(tab: Tab, titleOnly?: boolean): void;
   /** Mounts a freshly created page view into the window. */
   attach(tab: Tab, view: WebContentsView): void;
   detach(view: WebContentsView): void;
@@ -43,7 +45,10 @@ export function pageWebPreferences(): WebPreferences {
 const ignore = () => {};
 
 export class Tab {
-  readonly id = randomUUID();
+  readonly id: string;
+  workspaceId = 'default';
+  folderId: string | null = null;
+  isEssential = false;
   url: string;
   title: string;
   isLoading = false;
@@ -79,13 +84,17 @@ export class Tab {
   isHtmlFullscreen = false;
 
   view: WebContentsView | null = null;
+  private boostCSSKey: string | null = null;
+  private boostRevision = 0;
   private zoomHost: string | null = null;
 
   constructor(
     private readonly host: TabHost,
     url: string,
-    options: { deferLoad?: boolean; popup?: BrowserWindowConstructorOptions } = {},
+    options: { id?: string; workspaceId?: string; deferLoad?: boolean; popup?: BrowserWindowConstructorOptions } = {},
   ) {
+    this.id = options.id ?? randomUUID();
+    this.workspaceId = options.workspaceId ?? 'default';
     this.url = url;
     this.title = hostOf(url) ?? 'New Tab';
     if (options.popup) {
@@ -118,6 +127,9 @@ export class Tab {
       isPlayingMedia: this.isPlayingMedia,
       themeColor: this.themeColor,
       isPinned: this.isPinned,
+      isEssential: this.isEssential,
+      workspaceId: this.workspaceId,
+      folderId: this.folderId,
       isUnloaded: this.isUnloaded,
     };
   }
@@ -140,6 +152,7 @@ export class Tab {
   }
 
   private wire(wc: WebContents): void {
+    wc.on('did-finish-load', () => this.host.applyBoost(this));
     wc.on('did-start-loading', () => {
       this.isLoading = true;
       this.host.changed();
@@ -163,6 +176,7 @@ export class Tab {
     // site's zoom for a moment.
     wc.on('did-navigate', (_event, url) => {
       this.url = url;
+      this.host.recordVisit(this);
       this.applyStoredZoom();
       this.syncNavigationState();
     });
@@ -171,11 +185,13 @@ export class Tab {
     wc.on('did-navigate-in-page', (_event, url, isMainFrame) => {
       if (!isMainFrame) return;
       this.url = url;
+      this.host.recordVisit(this);
       this.syncNavigationState();
     });
     wc.on('page-title-updated', (_event, title) => {
       if (!title) return;
       this.title = title;
+      this.host.recordVisit(this, true);
       this.host.changed();
     });
     wc.on('page-favicon-updated', (_event, favicons) => {
@@ -278,6 +294,24 @@ export class Tab {
     this.host.changed();
   }
 
+  async applyCSS(css: string): Promise<void> {
+    const wc = this.webContents;
+    const revision = ++this.boostRevision;
+    if (!wc) return;
+    try {
+      if (this.boostCSSKey) {
+        const previous = this.boostCSSKey;
+        this.boostCSSKey = null;
+        await wc.removeInsertedCSS(previous);
+      }
+      if (revision !== this.boostRevision || !css || wc.isDestroyed()) return;
+      const key = await wc.insertCSS(css, { cssOrigin: 'user' });
+      if (revision !== this.boostRevision || this.webContents !== wc) {
+        if (!wc.isDestroyed()) await wc.removeInsertedCSS(key);
+      } else this.boostCSSKey = key;
+    } catch { /* Navigation can replace the document during insertion. */ }
+  }
+
   goBack(): void {
     this.webContents?.navigationHistory.goBack();
   }
@@ -332,6 +366,8 @@ export class Tab {
   }
 
   destroyView(): void {
+    this.boostRevision++;
+    this.boostCSSKey = null;
     const view = this.view;
     if (!view) return;
     this.view = null;

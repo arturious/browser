@@ -1,6 +1,9 @@
 import { useEffect, useRef, type CSSProperties } from 'react';
 import { Sidebar } from './components/Sidebar';
 import { api, useAppState } from './state';
+import { useSidebarGestures } from './useSidebarGestures';
+import { useLibraryMotion } from './useLibraryMotion';
+import { useZenTheme } from './useZenTheme';
 
 /** How long the sidebar stays out after the pointer leaves it (Zen uses the same). */
 const KEEP_OPEN_AFTER_LEAVE = 150;
@@ -14,17 +17,24 @@ const CLOSE_IF_NOT_ENTERED = 700;
  */
 export function Peek() {
   const state = useAppState();
+  useZenTheme(state);
+  useLibraryMotion(state);
   const open = state.ui.sidebarPeek;
+  const chromeRoot = useRef<HTMLElement>(document.documentElement);
+  const gesture = useSidebarGestures(chromeRoot, state, api.requestWorkspaceCreation);
+  const gestureActive = useRef(state.ui.libraryGestureActive);
+  gestureActive.current = state.ui.libraryGestureActive;
   const hovered = useRef(false);
   const leaveTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
 
   useEffect(() => {
-    if (!open) return;
+    if (!open) { hovered.current = false; clearTimeout(leaveTimer.current); return; }
     const timer = setTimeout(() => {
-      if (!hovered.current) api.setSidebarPeek(false);
+      if (!hovered.current && !gestureActive.current) api.setSidebarPeek(false);
     }, CLOSE_IF_NOT_ENTERED);
     return () => clearTimeout(timer);
   }, [open]);
+  useEffect(() => () => clearTimeout(leaveTimer.current), []);
 
   return (
     <div
@@ -41,10 +51,10 @@ export function Peek() {
       }}
       onMouseLeave={() => {
         hovered.current = false;
-        leaveTimer.current = setTimeout(() => api.setSidebarPeek(false), KEEP_OPEN_AFTER_LEAVE);
+        if (!state.ui.libraryGestureActive) leaveTimer.current = setTimeout(() => api.setSidebarPeek(false), KEEP_OPEN_AFTER_LEAVE);
       }}
     >
-      <Sidebar tabs={state.tabs} activeTabId={state.activeTabId} expanded={state.appearance.sidebarExpanded} />
+      <Sidebar state={state} expanded={state.appearance.sidebarExpanded} externalGesture={gesture} />
     </div>
   );
 }
